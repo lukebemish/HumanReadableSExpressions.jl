@@ -153,7 +153,7 @@ function tokenizeline(line, tokens, ctx::TokenizerContext)
         push!(tokens, SimpleToken(EOL, ctx.line, length(line)+ctx.posoffset))
         if ctx.modes[end] == S_MODE
             idxs = findfirst(r"^\s+", line)
-            if idx === nothing
+            if idxs === nothing
                 push!(ctx.indents, [])
             else
                 push!(ctx.indents, [line[idxs]])
@@ -263,10 +263,12 @@ end
 function parsefile(tokens)
     consume(tokens)
     inner = Expression[]
-    while tokentype(peek(tokens)) != DEINDENT && tokentype(peek(tokens)) != EOF
+    while !(tokentype(peek(tokens)) in [DEINDENT, EOF, RPAREN])
         push!(inner, parseexpression(tokens))
     end
-    consume(tokens)
+    if tokentype(peek(tokens)) == DEINDENT
+        consume(tokens)
+    end
     return ListExpression(inner)
 end
 
@@ -391,6 +393,15 @@ end
 
 function translate(expression::BoolExpression)
     expression.value
+end
+
+function parse(io::IO)
+    tokens = tokenize(io)
+    parsetree = parsefile(tokens)
+    if tokentype(peek(tokens)) != EOF
+        throw(HrseSyntaxException("Unexpected token '$(tokentext(peek(tokens)))'", tokenline(peek(tokens)), tokenpos(peek(tokens))))
+    end
+    return translate(parsetree)
 end
 
 end # module Hrse
