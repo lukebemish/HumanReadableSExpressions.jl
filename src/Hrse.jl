@@ -329,13 +329,13 @@ function parselistexpression(tokens)
         end
         push!(expressions, parseexpression(tokens))
     end
+    consume(tokens)
     if dotexpr
         if length(expressions) != 2
             throw(HrseSyntaxException("Expected exactly two expressions surrounding dot in list", dotline, dotpos))
         end
         return DotExpression(expressions[1], expressions[2])
     end
-    consume(tokens)
     return ListExpression(expressions)
 end
 
