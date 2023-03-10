@@ -7,6 +7,7 @@ struct CommentedElement
     comments::Vector{String}
 end
 
+include("Literals.jl")
 include("Parser.jl")
 
 read = Parser.read
