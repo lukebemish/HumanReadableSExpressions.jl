@@ -6,42 +6,42 @@ const BASE10::UInt16 = 10
 const BASE16::UInt16 = 16
 const BASE2::UInt16 = 2
 
-function nextoverflow(type::Type{T})::Union{Type{<:Integer},Nothing} where {T <: Integer}
-    if T == Int8
-        return Int16
-    elseif T == Int16
-        return Int32
-    elseif T == Int32
-        return Int64
-    elseif T == Int64
-        return Int128
-    elseif T == Int128
-        return BigInt
-    end
-    return nothing
-end
+#=
+( and ) reserved for s-expressions
+:, ., = reserved for pairs
+" reserved for strings
+# reserved for comments
+whitespace can't be in symbols in general
+', ` reserved for extensions
+=# 
+const RESERVED_CHAR = "():=.\"'`\\s#"
+const SYMBOL_CHAR = "[^$RESERVED_CHAR]"
+const SYMBOL_START_CHAR = "[^$RESERVED_CHAR\\-+\\d]"
 
-function parseint(s::String)
+const INT_REGEX = Regex("([+-]?)((0[xX][0-9a-fA-F_]+)|(0[bB][0-1_]+)|([0-9_]+))(?=[$(replace(RESERVED_CHAR,'.'=>""))]|\$)")
+
+function parseint(s::String; types=[Int64, BigInt])
+    types = Vector{Type{<:Signed}}(types)
     s = s*" "
     s = replace(s, '_'=>"")
     if startswith(s, '-')
-        return -parseunsigned(s[2:end])
+        return -parseunsigned(s[2:end], types)
     elseif startswith(s, '+')
-        return parseunsigned(s[2:end])
+        return parseunsigned(s[2:end], types)
     end
-    return parseunsigned(s)
+    return parseunsigned(s, types)
 end
 
-function parseunsigned(s::String)
+function parseunsigned(s::String, types::Vector{Type{<:Signed}})
     if startswith(s, "0x")
-        return parseint(s[3:end], BASE16, Int, BigInt, 0)
+        return parseint(s[3:end], BASE16, types[1], types[2:end], zero(types[1]))
     elseif startswith(s, "0b")
-        return parseint(s[3:end], BASE2, Int, BigInt, 0)
+        return parseint(s[3:end], BASE2, types[1], types[2:end], zero(types[1]))
     end
-    return parseint(s, BASE10, Int, BigInt, 0)
+    return parseint(s, BASE10, types[1], types[2:end], zero(types[1]))
 end
 
-function parseint(s::String, base::UInt16, type::Type{BigInt}, ::Nothing, n::BigInt)::BigInt
+function parseint(s::String, base::UInt16, ::Type{BigInt}, ::Vector{Type{<:Signed}}, n::BigInt)::BigInt
     i = 0 #TODO: sign
     base = convert(BigInt, base)
 
@@ -63,7 +63,7 @@ function parseint(s::String, base::UInt16, type::Type{BigInt}, ::Nothing, n::Big
     return n
 end
 
-function parseint(s::String, base::UInt16, type::Type{T}, overflowtype::Union{Type{V},Nothing}, n::T)::Integer where {T <: Integer, V <: Integer}
+function parseint(s::String, base::UInt16, ::Type{T}, overflowtypes::Vector{Type{<:Signed}}, n::T)::Integer where T <: Signed
     i = 0 #TODO: sign
     m::T = if base == BASE10
         div(typemax(T) - T(9), T(10))
@@ -101,10 +101,11 @@ function parseint(s::String, base::UInt16, type::Type{T}, overflowtype::Union{Ty
         n, ov_mul = mul_with_overflow(n, baseT)
         n, ov_add = add_with_overflow(n, d)
         if ov_mul || ov_add
-            if isnothing(overflowtype)
+            if length(overflowtypes) == 0
                 return nothing
             else
-                return parseint(s[i-1:end], base, overflowtype, nextoverflow(overflowtype), convert(overflowtype, nold))
+                newtype = overflowtypes[1]
+                return parseint(s[i-1:end], base, newtype, overflowtypes[2:end], convert(newtype, nold))
             end
         end
 
