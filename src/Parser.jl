@@ -169,13 +169,13 @@ end
 
 function tokenizeline(tokens, ctx::TokenizerContext)
     pos = 1
-    newtokens = Token[]
+    newtokens = Token[SimpleToken(BOL, 0, 0)]
     while pos <= length(ctx.linetext)
         pos, ctx = consumetoken(ctx.linetext, newtokens, pos, ctx)
     end
     push!(tokens, newtokens...)
     if tokentype(newtokens[end]) == COLON
-        push!(tokens, SimpleToken(EOL, ctx.line, length(line)+ctx.posoffset))
+        push!(tokens, SimpleToken(EOL, ctx.line, length(ctx.line)+ctx.posoffset))
         if ctx.modes[end] == S_MODE
             idxs = findfirst(r"^\s+", line)
             if idxs === nothing
