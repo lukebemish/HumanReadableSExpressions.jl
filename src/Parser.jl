@@ -268,17 +268,78 @@ end
 
 function consumestring(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
     posorig = pos
+    builder = Char[]
     while pos <= length(line) && line[pos] != '"'
-        # I'll do escapes later
-        #if line[pos] == '\\'
-        #    pos += 1
-        #end
-        pos += 1
+        if line[pos] == '\\'
+            pos += 1
+            if pos > length(line)
+                throw(HrseSyntaxException("Unterminated string", ctx.line, posorig+ctx.posoffset))
+            end
+            char = line[pos]
+            if char == 'n'
+                push!(builder, '\n')
+                pos += 1
+            elseif char == 't'
+                push!(builder, '\t')
+                pos += 1
+            elseif char == 'r'
+                push!(builder, '\r')
+                pos += 1
+            elseif char == 'b'
+                push!(builder, '\b')
+                pos += 1
+            elseif char == 'f'
+                push!(builder, '\f')
+                pos += 1
+            elseif char == 'v'
+                push!(builder, '\v')
+                pos += 1
+            elseif char == 'a'
+                push!(builder, '\a')
+                pos += 1
+            elseif char == '\\'
+                push!(builder, '\\')
+                pos += 1
+            elseif char == '"'
+                push!(builder, '"')
+                pos += 1
+            elseif char == 'u'
+                matched = match(r"^[0-9a-fA-F]{1,4}", line[pos+1:end])
+                if isnothing(matched)
+                    throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", ctx.line, pos+ctx.posoffset))
+                end
+                push!(builder, Char(parse(UInt32, matched.match; base=16)))
+                pos += length(matched.match)
+            elseif char == 'U'
+                matched = match(r"^[0-9a-fA-F]{1,8}", line[pos+1:end])
+                if isnothing(matched)
+                    throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", ctx.line, pos+ctx.posoffset))
+                end
+                push!(builder, Char(parse(UInt32, matched.match; base=16)))
+                pos += length(matched.match)
+            elseif char == 'x'
+                matched = match(r"^[0-9a-fA-F]{1,2}", line[pos+1:end])
+                if isnothing(matched)
+                    throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", ctx.line, pos+ctx.posoffset))
+                end
+                push!(builder, Char(parse(UInt8, matched.match; base=16)))
+                pos += length(matched.match)
+            elseif '0' <= char < '8'
+                matched = match(r"^[0-7]{1,3}", line[pos:end])
+                push!(builder, Char(parse(UInt8, matched.match; base=8)))
+                pos += length(matched.match)-1
+            else
+                throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", ctx.line, pos+ctx.posoffset))
+            end
+        else
+            push!(builder, line[pos])
+            pos += 1
+        end
     end
     if pos > length(line)
         throw(HrseSyntaxException("Unterminated string", ctx.line, posorig+ctx.posoffset))
     end
-    push!(tokens, StringToken(line[posorig:pos-1], ctx.line, posorig+ctx.posoffset))
+    push!(tokens, StringToken(String(builder), ctx.line, posorig+ctx.posoffset))
     return pos+1, ctx
 end
 
