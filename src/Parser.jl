@@ -1,6 +1,7 @@
 module Parser
 
 import ..Hrse
+import ..Literals
 
 import Base: eof
 
@@ -18,14 +19,8 @@ struct StringToken <: Token
     pos::Integer
 end
 
-struct FloatToken <: Token
-    value::Float64
-    line::Integer
-    pos::Integer
-end
-
-struct IntegerToken <: Token
-    value::Int64
+struct NumberToken <: Token
+    value::Number
     line::Integer
     pos::Integer
 end
@@ -38,31 +33,26 @@ end
 
 tokentext(t::SimpleToken) = t.type
 tokentext(t::StringToken) = t.value
-tokentext(t::FloatToken) = t.value
-tokentext(t::IntegerToken) = t.value
+tokentext(t::NumberToken) = t.value
 tokentext(t::CommentToken) = t.comment
 
 tokenline(t::SimpleToken) = t.line
 tokenline(t::StringToken) = t.line
-tokenline(t::FloatToken) = t.line
-tokenline(t::IntegerToken) = t.line
+tokenline(t::NumberToken) = t.line
 tokenline(t::CommentToken) = t.line
 
 tokenpos(t::SimpleToken) = t.pos
 tokenpos(t::StringToken) = t.pos
-tokenpos(t::FloatToken) = t.pos
-tokenpos(t::IntegerToken) = t.pos
+tokenpos(t::NumberToken) = t.pos
 tokenpos(t::CommentToken) = t.pos
 
 const STRING = :STRING
-const FLOAT = :FLOAT
-const INTEGER = :INTEGER
+const NUMBER = :NUMBER
 const COMMENT = :COMMENT
 
 tokentype(t::SimpleToken) = t.type
 tokentype(::StringToken) = STRING
-tokentype(::FloatToken) = FLOAT
-tokentype(::IntegerToken) = INTEGER
+tokentype(::NumberToken) = NUMBER
 tokentype(::CommentToken) = COMMENT
 
 const LPAREN = :LPAREN
@@ -189,6 +179,7 @@ function tokenizeline(tokens, ctx::TokenizerContext)
 end
 
 function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
+    remainder = line[pos:end]
     if isspace(line[pos])
         return pos+1, ctx
     elseif line[pos] == '#' # comment - I'll handle capturing it later
@@ -220,6 +211,18 @@ function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,T
     elseif line[pos] == '='
         push!(tokens, SimpleToken(EQUALS, ctx.line, pos+ctx.posoffset))
         return pos+1, ctx
+    elseif (matched = match(Literals.FLOAT_REGEX, remainder)) !== nothing
+        text = string(matched.match)
+        push!(tokens, NumberToken(Literals.parsefloat(text), ctx.line, pos+ctx.posoffset))
+        return pos+length(text), ctx
+    elseif (matched = match(Literals.INT_REGEX, remainder)) !== nothing
+        text = string(matched.match)
+        parsed = Literals.parseint(text)
+        if parsed === nothing
+            throw(HrseSyntaxException("Invalid integer literal '$(matched.match)'; may be out of bounds", ctx.line, pos+ctx.posoffset))
+        end
+        push!(tokens, NumberToken(parsed, ctx.line, pos+ctx.posoffset))
+        return pos+length(text), ctx
     elseif line[pos] == '.'
         push!(tokens, SimpleToken(DOT, ctx.line, pos+ctx.posoffset))
         return pos+1, ctx
@@ -228,8 +231,8 @@ function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,T
         return pos+1, ctx
     elseif line[pos] == '"'
         return consumestring(line, tokens, pos+1, ctx)
-    elseif isletter(line[pos])
-        return consumesymbol(line, tokens, pos, ctx)
+    elseif (matched = match(Literals.SYMBOL_REGEX, remainder)) !== nothing
+        return consumesymbol(matched, tokens, pos, ctx)
     else
         throw(HrseSyntaxException("Unexpected character '$(line[1])'", ctx.line, pos+ctx.posoffset))
     end
@@ -279,17 +282,16 @@ function consumestring(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,
     return pos+1, ctx
 end
 
-function consumesymbol(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
+function consumesymbol(matched, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
+    text = matched.match
     posorig = pos
-    while pos <= length(line) && isletter(line[pos])
-        pos += 1
-    end
-    if line[posorig:pos-1] == "true"
+    pos = pos+length(text)
+    if text == "true"
         push!(tokens, SimpleToken(TRUE, ctx.line, posorig+ctx.posoffset))
-    elseif line[posorig:pos-1] == "false"
+    elseif text == "false"
         push!(tokens, SimpleToken(FALSE, ctx.line, posorig+ctx.posoffset))
     else
-        push!(tokens, StringToken(line[posorig:pos-1], ctx.line, posorig+ctx.posoffset))
+        push!(tokens, StringToken(text, ctx.line, posorig+ctx.posoffset))
     end
     return pos, ctx
 end
@@ -315,6 +317,10 @@ end
 
 struct BoolExpression <: Expression
     value::Bool
+end
+
+struct NumberExpression <: Expression
+    value::Number
 end
 
 struct CommentExpression <: Expression
@@ -372,6 +378,9 @@ function parsecompleteexpression(tokens)
     # TODO: numbers
     elseif tokentype(peek(tokens)) == TRUE || tokentype(peek(tokens)) == FALSE
         return parseboolexpression(tokens)
+    elseif tokentype(peek(tokens)) == NUMBER
+        token = consume(tokens)
+        return NumberExpression(token.value)
     elseif tokentype(peek(tokens)) == BOL
         return parseimodelineexpression(tokens)
     else
@@ -473,6 +482,10 @@ function translate(expression::CommentExpression, options::TranslationOptions)
         return translate(expression.expression, options)
     end
     return Hrse.CommentedElement(translate(expression.expression, options),expression.comments)
+end
+
+function translate(expression::NumberExpression, options::TranslationOptions)
+    expression.value
 end
 
 function read(io::IO; comment::Bool=false)

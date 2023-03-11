@@ -18,7 +18,18 @@ const RESERVED_CHAR = "():=.\"'`\\s#"
 const SYMBOL_CHAR = "[^$RESERVED_CHAR]"
 const SYMBOL_START_CHAR = "[^$RESERVED_CHAR\\-+\\d]"
 
-const INT_REGEX = Regex("([+-]?)((0[xX][0-9a-fA-F_]+)|(0[bB][0-1_]+)|([0-9_]+))(?=[$(replace(RESERVED_CHAR,'.'=>""))]|\$)")
+const SYMBOL_REGEX = Regex("^$SYMBOL_START_CHAR$SYMBOL_CHAR*")
+
+const DEC_DIGIT = "0-9"
+const HEX_DIGIT = "0-9a-fA-F"
+const BIN_DIGIT = "0-1"
+
+const INT_REGEX = Regex("^([+-]?)((0[xX][$(HEX_DIGIT)_]*[$(HEX_DIGIT)][$(HEX_DIGIT)_]*)|(0[bB][$(BIN_DIGIT)_]*[$(BIN_DIGIT)][$(BIN_DIGIT)_]*)|([$(DEC_DIGIT)_]*[$(DEC_DIGIT)][$(DEC_DIGIT)_]*))(?=[$(replace(RESERVED_CHAR,'.'=>""))]|\$)")
+
+const DEC_LITERAL = "([$(DEC_DIGIT)_]*[$(DEC_DIGIT)][$(DEC_DIGIT)_]*)"
+const FLOAT_EXPONENT = "[eE][+-]?$DEC_LITERAL"
+const FLOAT_MAIN = "($DEC_LITERAL\\.$DEC_LITERAL?|\\.$DEC_LITERAL)"
+const FLOAT_REGEX = Regex("^[+-]?($FLOAT_MAIN($FLOAT_EXPONENT)?|($DEC_LITERAL$FLOAT_EXPONENT))(?=[$(replace(RESERVED_CHAR,'.'=>""))]|\$)")
 
 function parseint(s::String; types=[Int64, BigInt])
     types = Vector{Type{<:Signed}}(types)
@@ -30,6 +41,10 @@ function parseint(s::String; types=[Int64, BigInt])
         return parseunsigned(s[2:end], types)
     end
     return parseunsigned(s, types)
+end
+
+function parsefloat(s::String; type::Type{<:AbstractFloat}=Float64)
+    return parse(type, s)
 end
 
 function parseunsigned(s::String, types::Vector{Type{<:Signed}})
