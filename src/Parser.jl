@@ -5,6 +5,12 @@ import ..Literals
 
 import Base: eof
 
+struct ParseOptions
+    integertypes
+    floattype
+    readcomments
+end
+
 abstract type Token end
 
 struct SimpleToken <: Token
@@ -90,17 +96,18 @@ struct TokenizerContext
     posoffset::Integer
     indents
     modes
+    options::ParseOptions
 end
 
 function addline(line::TokenizerContext)::TokenizerContext
-    return TokenizerContext(line.line+1, line.linetext*'\n'*readline(line.io), line.io, line.posoffset, line.indents, line.modes)
+    return TokenizerContext(line.line+1, line.linetext*'\n'*readline(line.io), line.io, line.posoffset, line.indents, line.modes, line.options)
 end
 
 function eof(line::TokenizerContext)
     return eof(line.io)
 end
 
-function tokenize(io::IO)
+function tokenize(io::IO, options::ParseOptions)
     tokens = Token[]
     indents = [[]]
     modes = [I_MODE]
@@ -151,7 +158,7 @@ function tokenize(io::IO)
             push!(tokens, SimpleToken(BOL, linenumber, 0))
         end
 
-        tokenizeline(tokens, TokenizerContext(linenumber, line, io, posoffset, indents, modes))
+        tokenizeline(tokens, TokenizerContext(linenumber, line, io, posoffset, indents, modes, options))
     end
     push!(tokens, SimpleToken(EOF, linenumber+1, 0))
     return tokens
@@ -185,7 +192,7 @@ function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,T
     elseif line[pos] == '#' # comment - I'll handle capturing it later
         if length(line) > pos
             comment = lstrip(line[pos+1:end])
-            if !isempty(comment)
+            if !isempty(comment) && ctx.options.readcomments
                 push!(tokens, CommentToken(comment, ctx.line, pos+ctx.posoffset))
             end 
         end
@@ -213,11 +220,11 @@ function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,T
         return pos+1, ctx
     elseif (matched = match(Literals.FLOAT_REGEX, remainder)) !== nothing
         text = string(matched.match)
-        push!(tokens, NumberToken(Literals.parsefloat(text), ctx.line, pos+ctx.posoffset))
+        push!(tokens, NumberToken(Literals.parsefloat(text; type=ctx.options.floattype), ctx.line, pos+ctx.posoffset))
         return pos+length(text), ctx
     elseif (matched = match(Literals.INT_REGEX, remainder)) !== nothing
         text = string(matched.match)
-        parsed = Literals.parseint(text)
+        parsed = Literals.parseint(text; types=ctx.options.integertypes)
         if parsed === nothing
             throw(HrseSyntaxException("Invalid integer literal '$(matched.match)'; may be out of bounds", ctx.line, pos+ctx.posoffset))
         end
@@ -262,8 +269,10 @@ function consumecomment(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer
         throw(HrseSyntaxException("Unterminated comment", origline, posorig+ctx.posoffset))
     end
     comment = line[posorig:pos+found[1]-1]
-    push!(tokens, CommentToken(strip(comment), origline, posorig+ctx.posoffset))
-    return pos+found[end], TokenizerContext(ctx.line, line, ctx.io, posoffset, ctx.indents, ctx.modes)
+    if ctx.options.readcomments
+        push!(tokens, CommentToken(strip(comment), origline, posorig+ctx.posoffset))
+    end
+    return pos+found[end], TokenizerContext(ctx.line, line, ctx.io, posoffset, ctx.indents, ctx.modes, ctx.options)
 end
 
 function consumestring(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
@@ -389,11 +398,11 @@ struct CommentExpression <: Expression
     expression::Expression
 end
 
-function parsefile(tokens)
+function parsefile(tokens, options::ParseOptions)
     consume(tokens)
     inner = Expression[]
     while !(tokentype(peek(tokens)) in [DEINDENT, EOF, RPAREN])
-        push!(inner, parseexpression(tokens))
+        push!(inner, parseexpression(tokens, options))
     end
     if tokentype(peek(tokens)) == DEINDENT
         consume(tokens)
@@ -401,55 +410,57 @@ function parsefile(tokens)
     return ListExpression(inner)
 end
 
-function parseexpression(tokens)
-    comments = []
-    while tokentype(peek(tokens)) == COMMENT
-        push!(comments, consume(tokens).comment)
+function parseexpression(tokens, options::ParseOptions)
+    if options.readcomments
+        comments = []
+        while tokentype(peek(tokens)) == COMMENT
+            push!(comments, consume(tokens).comment)
+        end
+        if length(comments) > 0
+            return CommentExpression(comments, parseexpression(tokens, options))
+        end
     end
-    if length(comments) > 0
-        return CommentExpression(comments, parseexpression(tokens))
-    end
-    expression = parsecompleteexpression(tokens)
+    expression = parsecompleteexpression(tokens, options)
     if tokentype(peek(tokens)) == COLON
         consume(tokens)
         if tokentype(peek(tokens)) == EOL
             consume(tokens)
             if tokentype(peek(tokens)) == INDENT
                 consume(tokens)
-                return DotExpression(expression, parsefile(tokens))
+                return DotExpression(expression, parsefile(tokens, options))
             else
                 throw(HrseSyntaxException("Expected indent", tokenline(peek(tokens)), tokenpos(peek(tokens))))
             end
         else
-            return DotExpression(expression, parseexpression(tokens))
+            return DotExpression(expression, parseexpression(tokens, options))
         end
     elseif tokentype(peek(tokens)) == EQUALS
         consume(tokens)
-        return DotExpression(expression, parseexpression(tokens))
+        return DotExpression(expression, parseexpression(tokens, options))
     else
         return expression
     end
 end
 
-function parsecompleteexpression(tokens)
+function parsecompleteexpression(tokens, options::ParseOptions)
     if tokentype(peek(tokens)) == LPAREN
-        return parselistexpression(tokens)
+        return parselistexpression(tokens, options)
     elseif tokentype(peek(tokens)) == STRING
-        return parsestringexpression(tokens)
+        return parsestringexpression(tokens, options)
     # TODO: numbers
     elseif tokentype(peek(tokens)) == TRUE || tokentype(peek(tokens)) == FALSE
-        return parseboolexpression(tokens)
+        return parseboolexpression(tokens, options)
     elseif tokentype(peek(tokens)) == NUMBER
         token = consume(tokens)
         return NumberExpression(token.value)
     elseif tokentype(peek(tokens)) == BOL
-        return parseimodelineexpression(tokens)
+        return parseimodelineexpression(tokens, options)
     else
         throw(HrseSyntaxException("Unexpected token '$(tokentext(peek(tokens)))'", tokenline(peek(tokens)), tokenpos(peek(tokens))))
     end
 end
 
-function parselistexpression(tokens)
+function parselistexpression(tokens, options::ParseOptions)
     consume(tokens)
     expressions = Expression[]
     dotexpr = false
@@ -466,7 +477,7 @@ function parselistexpression(tokens)
             consume(tokens)
             continue
         end
-        push!(expressions, parseexpression(tokens))
+        push!(expressions, parseexpression(tokens, options))
     end
     consume(tokens)
     if dotexpr
@@ -478,17 +489,17 @@ function parselistexpression(tokens)
     return ListExpression(expressions)
 end
 
-function parsestringexpression(tokens)
+function parsestringexpression(tokens, options::ParseOptions)
     token = consume(tokens)
     return StringExpression(token.value)
 end
 
-function parseboolexpression(tokens)
+function parseboolexpression(tokens, options::ParseOptions)
     token = consume(tokens)
     return BoolExpression(tokentype(token) == TRUE)
 end
 
-function parseimodelineexpression(tokens)
+function parseimodelineexpression(tokens, options::ParseOptions)
     expressions = Expression[]
     while tokentype(peek(tokens)) == BOL
         consume(tokens)
@@ -504,7 +515,7 @@ function parseimodelineexpression(tokens)
             consume(tokens)
             continue
         end
-        push!(expressions, parseexpression(tokens))
+        push!(expressions, parseexpression(tokens, options))
     end
     if dotexpr
         if length(expressions) != 2
@@ -518,44 +529,28 @@ function parseimodelineexpression(tokens)
     return ListExpression(expressions)
 end
 
-struct TranslationOptions
-    comment::Bool
-end
-
-function translate(expression::ListExpression, options::TranslationOptions)
+function translate(expression::ListExpression, options::ParseOptions)
     [translate(e, options) for e in expression.expressions]
 end
 
-function translate(expression::DotExpression, options::TranslationOptions)
+function translate(expression::DotExpression, options::ParseOptions)
     translate(expression.left, options) => translate(expression.right, options)
 end
 
-function translate(expression::StringExpression, options::TranslationOptions)
+function translate(expression::StringExpression, ::ParseOptions)
     expression.string
 end
 
-function translate(expression::BoolExpression, options::TranslationOptions)
+function translate(expression::BoolExpression, ::ParseOptions)
     expression.value
 end
 
-function translate(expression::CommentExpression, options::TranslationOptions)
-    if !options.comment
-        return translate(expression.expression, options)
-    end
+function translate(expression::CommentExpression, options::ParseOptions)
     return Hrse.CommentedElement(translate(expression.expression, options),expression.comments)
 end
 
-function translate(expression::NumberExpression, options::TranslationOptions)
+function translate(expression::NumberExpression, ::ParseOptions)
     expression.value
-end
-
-function read(io::IO; comment::Bool=false)
-    tokens = tokenize(io)
-    parsetree = parsefile(tokens)
-    if tokentype(peek(tokens)) != EOF
-        throw(HrseSyntaxException("Unexpected token '$(tokentext(peek(tokens)))'", tokenline(peek(tokens)), tokenpos(peek(tokens))))
-    end
-    return translate(parsetree, TranslationOptions(comment))
 end
 
 end
