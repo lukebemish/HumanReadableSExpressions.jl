@@ -108,7 +108,7 @@ function eof(line::TokenizerContext)
 end
 
 function tokenize(io::IO, options::ParseOptions)
-    tokens = Token[]
+    tokens = Token[SimpleToken(BOL, 0, 0)]
     indents = [[]]
     modes = [I_MODE]
     linenumber = 0
@@ -141,7 +141,7 @@ function tokenize(io::IO, options::ParseOptions)
                 for _ in 1:length(indent)-count
                     push!(tokens, SimpleToken(DEINDENT, linenumber, 0))
                 end
-                indent = indent[1:count]
+                indent = indent[1:count-1]
             end
             line = line[pos:end]
             posoffset = pos-1
@@ -151,12 +151,13 @@ function tokenize(io::IO, options::ParseOptions)
                     spaces += 1
                 end
                 push!(tokens, SimpleToken(INDENT, linenumber, 0))
+                push!(tokens, SimpleToken(BOL, linenumber, 0))
                 push!(indent, line[1:spaces])
                 line = line[spaces+1:end]
                 posoffset += spaces
             end
-            push!(tokens, SimpleToken(BOL, linenumber, 0))
         end
+        indents[end] = indent
 
         tokenizeline(tokens, TokenizerContext(linenumber, line, io, posoffset, indents, modes, options))
     end
