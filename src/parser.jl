@@ -5,12 +5,6 @@ import ..Literals
 
 import Base: eof
 
-struct ParseOptions
-    integertypes
-    floattype
-    readcomments
-end
-
 abstract type Token end
 
 struct SimpleToken <: Token
@@ -96,7 +90,7 @@ struct TokenizerContext
     posoffset::Integer
     indents
     modes
-    options::ParseOptions
+    options::Hrse.ParseOptions
 end
 
 function addline(line::TokenizerContext)::TokenizerContext
@@ -107,7 +101,7 @@ function eof(line::TokenizerContext)
     return eof(line.io)
 end
 
-function tokenize(io::IO, options::ParseOptions)
+function tokenize(io::IO, options::Hrse.ParseOptions)
     tokens = Token[SimpleToken(BOL, 0, 0)]
     indents = [[]]
     modes = [I_MODE]
@@ -402,7 +396,7 @@ struct CommentExpression <: Expression
     expression::Expression
 end
 
-function parsefile(tokens, options::ParseOptions)
+function parsefile(tokens, options::Hrse.ParseOptions)
     consume(tokens)
     inner = Expression[]
     while !(tokentype(peek(tokens)) in [DEINDENT, EOF, RPAREN])
@@ -414,7 +408,7 @@ function parsefile(tokens, options::ParseOptions)
     return ListExpression(inner)
 end
 
-function parseexpression(tokens, options::ParseOptions)
+function parseexpression(tokens, options::Hrse.ParseOptions)
     if options.readcomments
         comments = []
         while tokentype(peek(tokens)) == COMMENT
@@ -446,7 +440,7 @@ function parseexpression(tokens, options::ParseOptions)
     end
 end
 
-function parsecompleteexpression(tokens, options::ParseOptions)
+function parsecompleteexpression(tokens, options::Hrse.ParseOptions)
     if tokentype(peek(tokens)) == LPAREN
         return parselistexpression(tokens, options)
     elseif tokentype(peek(tokens)) == STRING
@@ -464,7 +458,7 @@ function parsecompleteexpression(tokens, options::ParseOptions)
     end
 end
 
-function parselistexpression(tokens, options::ParseOptions)
+function parselistexpression(tokens, options::Hrse.ParseOptions)
     consume(tokens)
     expressions = Expression[]
     dotexpr = false
@@ -493,17 +487,17 @@ function parselistexpression(tokens, options::ParseOptions)
     return ListExpression(expressions)
 end
 
-function parsestringexpression(tokens, options::ParseOptions)
+function parsestringexpression(tokens, options::Hrse.ParseOptions)
     token = consume(tokens)
     return StringExpression(token.value)
 end
 
-function parseboolexpression(tokens, options::ParseOptions)
+function parseboolexpression(tokens, options::Hrse.ParseOptions)
     token = consume(tokens)
     return BoolExpression(tokentype(token) == TRUE)
 end
 
-function parseimodelineexpression(tokens, options::ParseOptions)
+function parseimodelineexpression(tokens, options::Hrse.ParseOptions)
     expressions = Expression[]
     while tokentype(peek(tokens)) == BOL
         consume(tokens)
@@ -533,27 +527,27 @@ function parseimodelineexpression(tokens, options::ParseOptions)
     return ListExpression(expressions)
 end
 
-function translate(expression::ListExpression, options::ParseOptions)
+function translate(expression::ListExpression, options::Hrse.ParseOptions)
     [translate(e, options) for e in expression.expressions]
 end
 
-function translate(expression::DotExpression, options::ParseOptions)
+function translate(expression::DotExpression, options::Hrse.ParseOptions)
     translate(expression.left, options) => translate(expression.right, options)
 end
 
-function translate(expression::StringExpression, ::ParseOptions)
+function translate(expression::StringExpression, ::Hrse.ParseOptions)
     expression.string
 end
 
-function translate(expression::BoolExpression, ::ParseOptions)
+function translate(expression::BoolExpression, ::Hrse.ParseOptions)
     expression.value
 end
 
-function translate(expression::CommentExpression, options::ParseOptions)
+function translate(expression::CommentExpression, options::Hrse.ParseOptions)
     return Hrse.CommentedElement(translate(expression.expression, options),expression.comments)
 end
 
-function translate(expression::NumberExpression, ::ParseOptions)
+function translate(expression::NumberExpression, ::Hrse.ParseOptions)
     expression.value
 end
 
