@@ -307,6 +307,9 @@ function consumestring(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,
             elseif char == 'a'
                 push!(builder, '\a')
                 pos += 1
+            elseif char == 'e'
+                push!(builder, '\e')
+                pos += 1
             elseif char == '\\'
                 push!(builder, '\\')
                 pos += 1
@@ -430,7 +433,7 @@ function parseexpression(tokens, options::ParseOptions)
                 consume(tokens)
                 return DotExpression(expression, parsefile(tokens, options))
             else
-                throw(HrseSyntaxException("Expected indent", tokenline(peek(tokens)), tokenpos(peek(tokens))))
+                return DotExpression(expression, ListExpression([]))
             end
         else
             return DotExpression(expression, parseexpression(tokens, options))

@@ -14,7 +14,8 @@ const BASE2::UInt16 = 2
 whitespace can't be in symbols in general
 ', ` reserved for extensions
 =# 
-const RESERVED_CHAR = "():=.\"'`\\s#"
+
+const RESERVED_CHAR = "():=.\"'`\\p{Cc}\\p{Zs}#"
 const SYMBOL_CHAR = "[^$RESERVED_CHAR]"
 const SYMBOL_START_CHAR = "[^$RESERVED_CHAR\\-+\\d]"
 
