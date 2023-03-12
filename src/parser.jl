@@ -90,7 +90,7 @@ struct TokenizerContext
     posoffset::Integer
     indents
     modes
-    options::Hrse.ParseOptions
+    options::Hrse.ReadOptions
 end
 
 function addline(line::TokenizerContext)::TokenizerContext
@@ -101,7 +101,7 @@ function eof(line::TokenizerContext)
     return eof(line.io)
 end
 
-function tokenize(io::IO, options::Hrse.ParseOptions)
+function tokenize(io::IO, options::Hrse.ReadOptions)
     tokens = Token[SimpleToken(BOL, 0, 0)]
     indents = [[]]
     modes = [I_MODE]
@@ -135,20 +135,21 @@ function tokenize(io::IO, options::Hrse.ParseOptions)
                 for _ in 1:length(indent)-count
                     push!(tokens, SimpleToken(DEINDENT, linenumber, 0))
                 end
-                indent = indent[1:count-1]
-            end
-            line = line[pos:end]
-            posoffset = pos-1
-            if isspace(line[1])
-                spaces = 1
-                while isspace(line[spaces+1])
-                    spaces += 1
+                indent = indent[1:count]
+            else
+                line = line[pos:end]
+                posoffset = pos-1
+                if isspace(line[1])
+                    spaces = 1
+                    while isspace(line[spaces+1])
+                        spaces += 1
+                    end
+                    push!(tokens, SimpleToken(INDENT, linenumber, 0))
+                    push!(tokens, SimpleToken(BOL, linenumber, 0))
+                    push!(indent, line[1:spaces])
+                    line = line[spaces+1:end]
+                    posoffset += spaces
                 end
-                push!(tokens, SimpleToken(INDENT, linenumber, 0))
-                push!(tokens, SimpleToken(BOL, linenumber, 0))
-                push!(indent, line[1:spaces])
-                line = line[spaces+1:end]
-                posoffset += spaces
             end
         end
         indents[end] = indent
@@ -169,11 +170,11 @@ function tokenizeline(tokens, ctx::TokenizerContext)
     if tokentype(newtokens[end]) == COLON
         push!(tokens, SimpleToken(EOL, ctx.line, length(ctx.line)+ctx.posoffset))
         if ctx.modes[end] == S_MODE
-            idxs = findfirst(r"^\s+", line)
+            idxs = findfirst(r"^\s+", ctx.linetext)
             if idxs === nothing
                 push!(ctx.indents, [])
             else
-                push!(ctx.indents, [line[idxs]])
+                push!(ctx.indents, [ctx.linetext[idxs]])
             end
             return push!(ctx.modes, I_MODE)
         end
@@ -396,7 +397,7 @@ struct CommentExpression <: Expression
     expression::Expression
 end
 
-function parsefile(tokens, options::Hrse.ParseOptions)
+function parsefile(tokens, options::Hrse.ReadOptions)
     consume(tokens)
     inner = Expression[]
     while !(tokentype(peek(tokens)) in [DEINDENT, EOF, RPAREN])
@@ -408,7 +409,7 @@ function parsefile(tokens, options::Hrse.ParseOptions)
     return ListExpression(inner)
 end
 
-function parseexpression(tokens, options::Hrse.ParseOptions)
+function parseexpression(tokens, options::Hrse.ReadOptions)
     if options.readcomments
         comments = []
         while tokentype(peek(tokens)) == COMMENT
@@ -440,7 +441,7 @@ function parseexpression(tokens, options::Hrse.ParseOptions)
     end
 end
 
-function parsecompleteexpression(tokens, options::Hrse.ParseOptions)
+function parsecompleteexpression(tokens, options::Hrse.ReadOptions)
     if tokentype(peek(tokens)) == LPAREN
         return parselistexpression(tokens, options)
     elseif tokentype(peek(tokens)) == STRING
@@ -458,7 +459,7 @@ function parsecompleteexpression(tokens, options::Hrse.ParseOptions)
     end
 end
 
-function parselistexpression(tokens, options::Hrse.ParseOptions)
+function parselistexpression(tokens, options::Hrse.ReadOptions)
     consume(tokens)
     expressions = Expression[]
     dotexpr = false
@@ -475,6 +476,10 @@ function parselistexpression(tokens, options::Hrse.ParseOptions)
             consume(tokens)
             continue
         end
+        if tokentype(peek(tokens)) in [BOL, DEINDENT]
+            consume(tokens)
+            continue
+        end
         push!(expressions, parseexpression(tokens, options))
     end
     consume(tokens)
@@ -487,17 +492,17 @@ function parselistexpression(tokens, options::Hrse.ParseOptions)
     return ListExpression(expressions)
 end
 
-function parsestringexpression(tokens, options::Hrse.ParseOptions)
+function parsestringexpression(tokens, options::Hrse.ReadOptions)
     token = consume(tokens)
     return StringExpression(token.value)
 end
 
-function parseboolexpression(tokens, options::Hrse.ParseOptions)
+function parseboolexpression(tokens, options::Hrse.ReadOptions)
     token = consume(tokens)
     return BoolExpression(tokentype(token) == TRUE)
 end
 
-function parseimodelineexpression(tokens, options::Hrse.ParseOptions)
+function parseimodelineexpression(tokens, options::Hrse.ReadOptions)
     expressions = Expression[]
     while tokentype(peek(tokens)) == BOL
         consume(tokens)
@@ -527,27 +532,27 @@ function parseimodelineexpression(tokens, options::Hrse.ParseOptions)
     return ListExpression(expressions)
 end
 
-function translate(expression::ListExpression, options::Hrse.ParseOptions)
+function translate(expression::ListExpression, options::Hrse.ReadOptions)
     [translate(e, options) for e in expression.expressions]
 end
 
-function translate(expression::DotExpression, options::Hrse.ParseOptions)
+function translate(expression::DotExpression, options::Hrse.ReadOptions)
     translate(expression.left, options) => translate(expression.right, options)
 end
 
-function translate(expression::StringExpression, ::Hrse.ParseOptions)
+function translate(expression::StringExpression, ::Hrse.ReadOptions)
     expression.string
 end
 
-function translate(expression::BoolExpression, ::Hrse.ParseOptions)
+function translate(expression::BoolExpression, ::Hrse.ReadOptions)
     expression.value
 end
 
-function translate(expression::CommentExpression, options::Hrse.ParseOptions)
+function translate(expression::CommentExpression, options::Hrse.ReadOptions)
     return Hrse.CommentedElement(translate(expression.expression, options),expression.comments)
 end
 
-function translate(expression::NumberExpression, ::Hrse.ParseOptions)
+function translate(expression::NumberExpression, ::Hrse.ReadOptions)
     expression.value
 end
 

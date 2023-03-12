@@ -1,7 +1,12 @@
 module Hrse
 
 """
-    ParseOptions(kwargs...)
+An extension to HRSE; axpects a "dense" HRSE file with a single root-level element instead of a list of elements.
+"""
+const DENSE = :DENSE
+
+"""
+    ReadOptions(kwargs...)
 
 Stores options for parsing HRSE files.
 
@@ -11,35 +16,44 @@ Stores options for parsing HRSE files.
  - `floattype = Float64`: The floating point type to parse floating point numbers as.
  - `readcomments = false`: Whether to read comments and store them in `CommentedElement` objects; if false, comments are
     ignored
- - `dense = false`: Expects a "dense" HRSE file with a single root-level element instead of a list of elements.
+ - `extensions`: A collection of symbols representing extensions to HRSE.
 """
-struct ParseOptions
+struct ReadOptions
     integertypes
-    floattype
-    readcomments
-    dense
-    ParseOptions(;
+    floattype::Type{<:AbstractFloat}
+    readcomments::Bool
+    extensions
+    ReadOptions(;
     integertypes = [Int64, BigInt],
     floattype::Type{<:AbstractFloat} = Float64,
     readcomments::Bool = false,
-    dense::Bool = false) = new(
+    extensions=[]) = new(
         integertypes,
         floattype,
         readcomments,
-        dense)
+        extensions)
 end
 
-abstract type PrinterOptions end
+@enum PairMode CONDENSED_MODE=1 DOT_MODE=2 EQUALS_MODE=3 COLON_MODE=4
 
-struct PrintCondensed <: PrinterOptions end
-
-struct PrintPretty <: PrinterOptions
-    indent::Integer
-    preferparens::Bool
+struct PrinterOptions
+    indent::String
     comments::Bool
-    PrintPretty(; indent::Integer=2, preferparens::Bool=false, comments::Bool) = new(indent, preferparens, bomments)
+    extensions
+    pairmode::PairMode
+    inlineprimitives::Integer
+    PrinterOptions(;
+    indent::String="  ",
+    comments::Bool=true,
+    extensions=[],
+    pairmode::PairMode=COLON_MODE,
+    inlineprimitives::Integer=20) = new(
+        indent,
+        comments,
+        extensions,
+        pairmode,
+        inlineprimitives)
 end
-
 
 struct CommentedElement
     element::Any
@@ -52,8 +66,8 @@ include("printer.jl")
 
 
 """
-    readhrse(hrse::IO; options=ParseOptions())
-    readhrse(hrse::String; options=ParseOptions())
+    readhrse(hrse::IO; options=ReadOptions())
+    readhrse(hrse::String; options=ReadOptions())
 
 Reads an HRSE file from the given IO object or string and returns the corresponding Julia object. The `options` argument can
 be used to configure the parser. Lists will be read as vectors, pairs as a Pair, symbols and strings as a String, and 
@@ -82,26 +96,34 @@ julia> Hrse.readhrse(hrse)
  "gamma" => Pair{String}["a" => 1, "b" => 2, "c" => "c"]
 ```
 """
-function readhrse(hrse::IO; options::ParseOptions=ParseOptions())
+function readhrse(hrse::IO; options::ReadOptions=ReadOptions())
+    dense = DENSE in options.extensions
     tokens = Parser.tokenize(hrse, options)
     parsetree = Parser.parsefile(tokens, options)
     if Parser.tokentype(Parser.peek(tokens)) != Parser.EOF
         throw(Parser.HrseSyntaxException("Unexpected token '$(Parser.tokentext(Parser.peek(tokens)))'", Parser.tokenline(Parser.peek(tokens)), Parser.tokenpos(Parser.peek(tokens))))
     end
     translated = Parser.translate(parsetree, options)
-    if (options.dense && length(translated) != 1)
+    if (dense && length(translated) != 1)
         throw(Parser.HrseSyntaxException("Expected a single root-level element in dense mode", Parser.tokenline(Parser.peek(tokens)), Parser.tokenpos(Parser.peek(tokens))))
     end
-    return options.dense ? translated[1] : translated
+    return dense ? translated[1] : translated
 end
 
-readhrse(hrse::String; options::ParseOptions=ParseOptions()) = readhrse(IOBuffer(hrse), options=options)
+readhrse(hrse::String; options::ReadOptions=ReadOptions()) = readhrse(IOBuffer(hrse), options=options)
 
-writehrse(io::IO, obj, options::PrintCondensed) = Printer.dense(io, obj)
+function writehrse(io::IO, obj, options::PrinterOptions)
+    toprint = (DENSE in options.extensions) ? [obj] : obj
+    if options.pairmode == CONDENSED_MODE
+        Printer.condensed(io, toprint, options)
+    else
+        Printer.pretty(io, toprint, options, 0, true; root=true)
+    end
+end
 
 writehrse(obj, options::PrinterOptions) = writehrse(stdout, obj, options)
 
-hrse(obj, options::PrinterOptions) = begin
+ashrse(obj, options::PrinterOptions) = begin
     io = IOBuffer()
     writehrse(io, obj, options)
     return String(take!(io))

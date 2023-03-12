@@ -4,5 +4,5 @@ Documentation for Hrse.jl
 
 ```@docs
 Hrse.readhrse
-Hrse.ParseOptions
+Hrse.ReadOptions
 ```
