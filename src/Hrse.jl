@@ -61,6 +61,8 @@ numeric types as the corresponding Julia type defined in the parser options.
 
 # Examples
 ```jldoctest
+julia> import Hrse
+
 julia> hrse = \"\"\"
        alpha:
            1 2 3 4
