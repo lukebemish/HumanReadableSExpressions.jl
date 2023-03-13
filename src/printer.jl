@@ -12,6 +12,8 @@ isprimitive(::Bool) = true
 isprimitive(::Symbol) = true
 isprimitive(::AbstractString) = true
 
+const RESERVED_SYMBOLS = ["true", "false"]
+
 function pretty(io::IO, obj::AbstractVector, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...)
     prettyiter(io, obj, options, indent, imode; kwargs...)
 end
@@ -156,7 +158,9 @@ function primitiveprint(io::IO, obj::Symbol, options::PrinterOptions)
 end
 
 function primitiveprint(io::IO, obj::AbstractString, options::PrinterOptions)
-    if !isnothing(match(Literals.FULL_SYMBOL_REGEX, obj))
+    if obj in RESERVED_SYMBOLS
+        print(io, '"', obj, '"')
+    elseif !isnothing(match(Literals.FULL_SYMBOL_REGEX, obj))
         print(io, obj)
     else
         print(io, '"')

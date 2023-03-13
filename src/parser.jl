@@ -3,7 +3,7 @@ module Parser
 import ..Hrse
 import ..Literals
 
-import Base: eof
+import Base: eof, push!
 
 abstract type Token end
 
@@ -31,20 +31,29 @@ struct CommentToken <: Token
     pos::Integer
 end
 
+struct IndentToken <: Token
+    indent::String
+    line::Integer
+    pos::Integer
+end
+
 tokentext(t::SimpleToken) = t.type
 tokentext(t::StringToken) = t.value
 tokentext(t::NumberToken) = t.value
 tokentext(t::CommentToken) = t.comment
+tokentext(t::IndentToken) = t.indent
 
 tokenline(t::SimpleToken) = t.line
 tokenline(t::StringToken) = t.line
 tokenline(t::NumberToken) = t.line
 tokenline(t::CommentToken) = t.line
+tokenline(t::IndentToken) = t.line
 
 tokenpos(t::SimpleToken) = t.pos
 tokenpos(t::StringToken) = t.pos
 tokenpos(t::NumberToken) = t.pos
 tokenpos(t::CommentToken) = t.pos
+tokenpos(t::IndentToken) = t.pos
 
 const STRING = :STRING
 const NUMBER = :NUMBER
@@ -54,6 +63,7 @@ tokentype(t::SimpleToken) = t.type
 tokentype(::StringToken) = STRING
 tokentype(::NumberToken) = NUMBER
 tokentype(::CommentToken) = COMMENT
+tokentype(::IndentToken) = INDENT
 
 const LPAREN = :LPAREN
 const RPAREN = :RPAREN
@@ -62,10 +72,8 @@ const DOT = :DOT
 const COLON = :COLON
 
 const INDENT = :INDENT
-const DEINDENT = :DEINDENT
-const EOL = :EOL
+
 const EOF = :EOF
-const BOL = :BOL
 
 const TRUE = :TRUE
 const FALSE = :FALSE
@@ -88,13 +96,12 @@ struct TokenizerContext
     linetext::String
     io::IO
     posoffset::Integer
-    indents
-    modes
     options::Hrse.ReadOptions
 end
 
 function addline(line::TokenizerContext)::TokenizerContext
-    return TokenizerContext(line.line+1, line.linetext*'\n'*readline(line.io), line.io, line.posoffset, line.indents, line.modes, line.options)
+    newline = readline(line.io)
+    return TokenizerContext(line.line+1, line.linetext*'\n'*newline, line.io, line.posoffset-length(line)-1, line.options)
 end
 
 function eof(line::TokenizerContext)
@@ -102,59 +109,18 @@ function eof(line::TokenizerContext)
 end
 
 function tokenize(io::IO, options::Hrse.ReadOptions)
-    tokens = Token[SimpleToken(BOL, 0, 0)]
-    indents = [[]]
-    modes = [I_MODE]
+    tokens = Token[]
     linenumber = 0
     while !eof(io)
-        posoffset = 0
-        indent = indents[end]
         line = readline(io)
         linenumber += 1
         if all(isspace(i) for i in line)
             continue # ignore whitespace
         end
-        if modes[end] == I_MODE
-            # handle indents
-            pos = 1
-            count = 0
-            for i in indent
-                if pos+length(i)-1 > length(line)
-                    break
-                elseif line[pos:pos+length(i)-1] == i
-                    pos += length(i)
-                    count += 1
-                else
-                    break
-                end
-            end
-            if count < length(indent)
-                if isspace(line[pos])
-                    throw(HrseSyntaxException("Unexpected indentation character", linenumber, pos))
-                end
-                for _ in 1:length(indent)-count
-                    push!(tokens, SimpleToken(DEINDENT, linenumber, 0))
-                end
-                indent = indent[1:count]
-            else
-                line = line[pos:end]
-                posoffset = pos-1
-                if isspace(line[1])
-                    spaces = 1
-                    while isspace(line[spaces+1])
-                        spaces += 1
-                    end
-                    push!(tokens, SimpleToken(INDENT, linenumber, 0))
-                    push!(tokens, SimpleToken(BOL, linenumber, 0))
-                    push!(indent, line[1:spaces])
-                    line = line[spaces+1:end]
-                    posoffset += spaces
-                end
-            end
-        end
-        indents[end] = indent
-
-        tokenizeline(tokens, TokenizerContext(linenumber, line, io, posoffset, indents, modes, options))
+        indent = match(r"^\s*", line).match
+        push!(tokens, IndentToken(indent, linenumber, 0))
+        line = lstrip(line)
+        tokenizeline(tokens, TokenizerContext(linenumber, line, io, length(indent), options))
     end
     push!(tokens, SimpleToken(EOF, linenumber+1, 0))
     return tokens
@@ -162,23 +128,11 @@ end
 
 function tokenizeline(tokens, ctx::TokenizerContext)
     pos = 1
-    newtokens = Token[SimpleToken(BOL, 0, 0)]
+    newtokens = Token[]
     while pos <= length(ctx.linetext)
         pos, ctx = consumetoken(ctx.linetext, newtokens, pos, ctx)
     end
     push!(tokens, newtokens...)
-    if tokentype(newtokens[end]) == COLON
-        push!(tokens, SimpleToken(EOL, ctx.line, length(ctx.line)+ctx.posoffset))
-        if ctx.modes[end] == S_MODE
-            idxs = findfirst(r"^\s+", ctx.linetext)
-            if idxs === nothing
-                push!(ctx.indents, [])
-            else
-                push!(ctx.indents, [ctx.linetext[idxs]])
-            end
-            return push!(ctx.modes, I_MODE)
-        end
-    end
 end
 
 function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
@@ -198,17 +152,8 @@ function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,T
             return consumecomment(line, tokens, pos+1, ctx)
         end
         push!(tokens, SimpleToken(LPAREN, ctx.line, pos+ctx.posoffset))
-        push!(ctx.modes, S_MODE)
         return pos+1, ctx
     elseif line[pos] == ')'
-        while length(ctx.modes) != 0 && ctx.modes[end] == I_MODE
-            pop!(ctx.modes)
-            pop!(ctx.indents)
-        end
-        if length(ctx.modes) == 0
-            throw(HrseSyntaxException("Unexpected closing parenthesis", ctx.line, pos+ctx.posoffset))
-        end
-        pop!(ctx.modes)
         push!(tokens, SimpleToken(RPAREN, ctx.line, pos+ctx.posoffset))
         return pos+1, ctx
     elseif line[pos] == '='
@@ -257,18 +202,15 @@ function consumecomment(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer
     while isnothing(found) && !eof(ctx)
         pos = length(line)
         ctx = addline(ctx)
-        posoffset = -length(line)
         line = ctx.linetext
         found = findfirst(search, line[pos:end])
     end
     if isnothing(found)
-        throw(HrseSyntaxException("Unterminated comment", origline, posorig+ctx.posoffset))
+        throw(HrseSyntaxException("Unterminated comment", origline, posorig+posoffset))
     end
     comment = line[posorig:pos+found[1]-1]
-    if ctx.options.readcomments
-        push!(tokens, CommentToken(strip(comment), origline, posorig+ctx.posoffset))
-    end
-    return pos+found[end], TokenizerContext(ctx.line, line, ctx.io, posoffset, ctx.indents, ctx.modes, ctx.options)
+    push!(tokens, CommentToken(strip(comment), origline, posorig+posoffset))
+    return pos+found[end], ctx
 end
 
 function consumestring(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
@@ -365,9 +307,21 @@ function consumesymbol(matched, tokens, pos, ctx::TokenizerContext)::Tuple{Integ
     return pos, ctx
 end
 
-peek(tokens) = tokens[1]
+mutable struct Tokens
+    tokens
+    indentlevel
+    rootlevel
+end
 
-consume(tokens) = popfirst!(tokens)
+peek(tokens::Tokens) = tokens.tokens[1]
+push!(tokens::Tokens, token::Token) = pushfirst!(tokens.tokens, token)
+function consume(tokens::Tokens)
+    token = popfirst!(tokens.tokens)
+    if tokentype(token) == INDENT
+        tokens.indentlevel = token
+    end
+    return token
+end
 
 abstract type Expression end
 
@@ -398,40 +352,85 @@ struct CommentExpression <: Expression
 end
 
 function parsefile(tokens, options::Hrse.ReadOptions)
-    consume(tokens)
     inner = Expression[]
-    while !(tokentype(peek(tokens)) in [DEINDENT, EOF, RPAREN])
-        push!(inner, parseexpression(tokens, options))
+    baseindent = peek(tokens)
+    comments = []
+    if tokentype(baseindent) == INDENT
+        if isempty(tokens.rootlevel) || startswith(baseindent.indent, tokens.rootlevel[end].indent)
+            while tokentype(peek(tokens)) != EOF
+                peeked = peek(tokens)
+                comments = parsecomments(tokens, options)
+                if tokentype(peeked) == INDENT
+                    if peeked.indent == baseindent.indent
+                    elseif peeked.indent != tokens.rootlevel[end].indent
+                        throw(HrseSyntaxException("Unexpected indent level", peek.line, peek.pos))
+                    else
+                        break
+                    end
+                end
+                expression = parseexpression(tokens, options)
+                if !isempty(comments)
+                    expression = CommentExpression([i.comment for i in comments], expression)
+                    comments = []
+                end
+                push!(inner, expression)
+            end
+            if !isempty(comments)
+                for comment in comments
+                    push!(tokens, comment)
+                end
+            end
+            if !isempty(tokens.rootlevel) pop!(tokens.rootlevel) end
+            return ListExpression(inner)
+        end
     end
-    if tokentype(peek(tokens)) == DEINDENT
-        consume(tokens)
+    throw(HrseSyntaxException("Expected indent", peek(tokens).line, peek(tokens).pos))
+end
+
+function stripindent(tokens)
+    indent = peek(tokens)
+    if tokentype(indent) == INDENT
+        return consume(tokens)
     end
-    return ListExpression(inner)
+end
+
+function parsecomments(tokens, options::Hrse.ReadOptions)
+    comments = []
+    indent = stripindent(tokens)
+    while tokentype(peek(tokens)) == COMMENT
+        push!(comments, consume(tokens))
+        newindent = stripindent(tokens)
+        if isnothing(indent)
+            indent = newindent
+        end
+    end
+    if !isnothing(indent)
+        push!(tokens, indent)
+    end
+    return options.readcomments ? comments : []
 end
 
 function parseexpression(tokens, options::Hrse.ReadOptions)
-    if options.readcomments
-        comments = []
-        while tokentype(peek(tokens)) == COMMENT
-            push!(comments, consume(tokens).comment)
-        end
-        if length(comments) > 0
-            return CommentExpression(comments, parseexpression(tokens, options))
-        end
+    comments = parsecomments(tokens, options)
+    if !isempty(comments)
+        return CommentExpression([i.comment for i in comments], parseexpression(tokens, options))
     end
     expression = parsecompleteexpression(tokens, options)
     if tokentype(peek(tokens)) == COLON
         consume(tokens)
-        if tokentype(peek(tokens)) == EOL
-            consume(tokens)
-            if tokentype(peek(tokens)) == INDENT
-                consume(tokens)
+        if tokentype(peek(tokens)) == INDENT
+            push!(tokens.rootlevel, tokens.indentlevel)
+            indent = peek(tokens)
+            if startswith(tokens.rootlevel[end].indent, indent.indent)
+                pop!(tokens.rootlevel)
+                return DotExpression(expression, ListExpression([]))
+            elseif startswith(indent.indent, tokens.indentlevel.indent)
                 return DotExpression(expression, parsefile(tokens, options))
             else
-                return DotExpression(expression, ListExpression([]))
+                throw(HrseSyntaxException("Unexpected indent level", indent.line, indent.pos))
             end
         else
-            return DotExpression(expression, parseexpression(tokens, options))
+            return DotExpression(expression, parseexpression(tokens, options)) 
         end
     elseif tokentype(peek(tokens)) == EQUALS
         consume(tokens)
@@ -452,7 +451,7 @@ function parsecompleteexpression(tokens, options::Hrse.ReadOptions)
     elseif tokentype(peek(tokens)) == NUMBER
         token = consume(tokens)
         return NumberExpression(token.value)
-    elseif tokentype(peek(tokens)) == BOL
+    elseif tokentype(peek(tokens)) == INDENT
         return parseimodelineexpression(tokens, options)
     else
         throw(HrseSyntaxException("Unexpected token '$(tokentext(peek(tokens)))'", tokenline(peek(tokens)), tokenpos(peek(tokens))))
@@ -466,6 +465,9 @@ function parselistexpression(tokens, options::Hrse.ReadOptions)
     dotpos = 0
     dotline = 0
     while tokentype(peek(tokens)) != RPAREN
+        if !isnothing(stripindent(tokens))
+            continue
+        end
         if tokentype(peek(tokens)) == EOF
             throw(HrseSyntaxException("Unexpected end of file", tokenline(peek(tokens)), tokenpos(peek(tokens))))
         end
@@ -473,10 +475,6 @@ function parselistexpression(tokens, options::Hrse.ReadOptions)
             dotexpr = true
             dotpos = tokenpos(peek(tokens))
             dotline = tokenline(peek(tokens))
-            consume(tokens)
-            continue
-        end
-        if tokentype(peek(tokens)) in [BOL, DEINDENT]
             consume(tokens)
             continue
         end
@@ -504,13 +502,13 @@ end
 
 function parseimodelineexpression(tokens, options::Hrse.ReadOptions)
     expressions = Expression[]
-    while tokentype(peek(tokens)) == BOL
+    while tokentype(peek(tokens)) == INDENT
         consume(tokens)
     end
     dotexpr = false
     dotpos = 0
     dotline = 0
-    while !(tokentype(peek(tokens)) in [EOL, BOL, RPAREN, EOF, DEINDENT])
+    while tokentype(peek(tokens)) != INDENT && tokentype(peek(tokens)) != EOF
         if tokentype(peek(tokens)) == DOT
             dotexpr = true
             dotpos = tokenpos(peek(tokens))

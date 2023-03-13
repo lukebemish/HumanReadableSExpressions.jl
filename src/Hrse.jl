@@ -98,7 +98,7 @@ julia> Hrse.readhrse(hrse)
 """
 function readhrse(hrse::IO; options::ReadOptions=ReadOptions())
     dense = DENSE in options.extensions
-    tokens = Parser.tokenize(hrse, options)
+    tokens = Parser.Tokens(Parser.tokenize(hrse, options), nothing, [])
     parsetree = Parser.parsefile(tokens, options)
     if Parser.tokentype(Parser.peek(tokens)) != Parser.EOF
         throw(Parser.HrseSyntaxException("Unexpected token '$(Parser.tokentext(Parser.peek(tokens)))'", Parser.tokenline(Parser.peek(tokens)), Parser.tokenpos(Parser.peek(tokens))))
