@@ -358,8 +358,8 @@ function parsefile(tokens, options::Hrse.ReadOptions)
     if tokentype(baseindent) == INDENT
         if isempty(tokens.rootlevel) || startswith(baseindent.indent, tokens.rootlevel[end].indent)
             while tokentype(peek(tokens)) != EOF
-                peeked = peek(tokens)
                 comments = parsecomments(tokens, options)
+                peeked = peek(tokens)
                 if tokentype(peeked) == INDENT
                     if peeked.indent == baseindent.indent
                     elseif peeked.indent != tokens.rootlevel[end].indent
@@ -376,7 +376,7 @@ function parsefile(tokens, options::Hrse.ReadOptions)
                 push!(inner, expression)
             end
             if !isempty(comments)
-                for comment in comments
+                for comment in reverse(comments)
                     push!(tokens, comment)
                 end
             end
@@ -400,7 +400,7 @@ function parsecomments(tokens, options::Hrse.ReadOptions)
     while tokentype(peek(tokens)) == COMMENT
         push!(comments, consume(tokens))
         newindent = stripindent(tokens)
-        if isnothing(indent)
+        if isnothing(newindent)
             indent = newindent
         end
     end

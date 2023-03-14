@@ -100,7 +100,7 @@ function pretty(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions, ind
     lines = split(join(obj.comments, '\n'), '\n')
     if allownewlinecomments && length(lines) == 1 && !isprimitive(obj.element)
         println(io, "# ", lines[1])
-        print(io, options.indent^indent)
+        print(io, options.indent^(indent-1))
     else
         count = 1
         disallowed = Iterators.flatten((length(i) for i in findall(r"(?![^#])#*\)", line)) for line in lines)
@@ -112,11 +112,17 @@ function pretty(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions, ind
         for line in lines
             if !first
                 println(io)
-                print(io, options.indent^indent, ' '^(count+2))
+                print(io, options.indent^(indent-1), ' '^(count+2))
+            else
+                first = false
             end
             print(io, line)
         end
         print(io, ' ', '#'^count, ')')
+        if allownewlinecomments
+            println(io)
+            print(io, options.indent^(indent-1))
+        else print(io, ' ') end
     end
     pretty(io, obj.element, options, indent, imode)
 end
