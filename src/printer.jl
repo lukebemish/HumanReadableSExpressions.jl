@@ -197,7 +197,13 @@ function primitiveprint(io::IO, obj::Integer, options::PrinterOptions)
 end
 
 function primitiveprint(io::IO, obj::AbstractFloat, options::PrinterOptions)
-    print(io, string(obj))
+    if isinf(obj)
+        print(io, obj < 0 ? "-#inf" : "#inf")
+    elseif isnan(obj)
+        print(io, "#nan")
+    else
+        print(io, string(obj))
+    end
 end
 
 function primitiveprint(io::IO, obj::Bool, options::PrinterOptions)

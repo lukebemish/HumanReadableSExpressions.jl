@@ -183,6 +183,12 @@ function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,T
         return consumesymbol(matched, tokens, pos, ctx)
     elseif line[pos] == '#' && (matched = match(Literals.SYMBOL_REGEX, remainder[2:end])) !== nothing
         return consumeliteral(matched, tokens, pos+1, ctx)
+    elseif startswith(remainder, "+#inf")
+        push!(tokens, NumberToken(ctx.options.floattype(Inf), ctx.line, pos+ctx.posoffset))
+        return pos+4, ctx
+    elseif startswith(remainder, "-#inf")
+        push!(tokens, NumberToken(ctx.options.floattype(-Inf), ctx.line, pos+ctx.posoffset))
+        return pos+4, ctx
     else
         throw(HrseSyntaxException("Unexpected character '$(line[1])'", ctx.line, pos+ctx.posoffset))
     end
@@ -310,6 +316,10 @@ function consumeliteral(matched, tokens, pos, ctx::TokenizerContext)::Tuple{Inte
         push!(tokens, SimpleToken(TRUE, ctx.line, posorig+ctx.posoffset))
     elseif text == "f"
         push!(tokens, SimpleToken(FALSE, ctx.line, posorig+ctx.posoffset))
+    elseif text == "inf"
+        push!(tokens, NumberToken(ctx.options.floattype(Inf), ctx.line, pos+ctx.posoffset))
+    elseif text == "nan"
+        push!(tokens, NumberToken(ctx.options.floattype(NaN), ctx.line, pos+ctx.posoffset))
     else
         throw(HrseSyntaxException("Invalid hash literal '$(text)'", ctx.line, posorig+ctx.posoffset))
     end
