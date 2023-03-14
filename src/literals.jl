@@ -10,12 +10,13 @@ const BASE2::UInt16 = 2
 ( and ) reserved for s-expressions
 :, ., = reserved for pairs
 " reserved for strings
-# reserved for comments
+; reserved for comments
+# reserved for literals
 whitespace can't be in symbols in general
 ', ` reserved for extensions
 =# 
 
-const RESERVED_CHAR = "():=.\"'`\\p{Cc}\\p{Zs}#"
+const RESERVED_CHAR = "():=.\"'`\\p{Cc}\\p{Zs}#;"
 const SYMBOL_CHAR = "[^$RESERVED_CHAR]"
 const SYMBOL_START_CHAR = "[^$RESERVED_CHAR\\-+\\d]"
 
@@ -59,7 +60,7 @@ function parseunsigned(s::String, types::Vector{Type{<:Signed}})
 end
 
 function parseint(s::String, base::UInt16, ::Type{BigInt}, ::Vector{Type{<:Signed}}, n::BigInt)::BigInt
-    i = 0 #TODO: sign
+    i = 0
     base = convert(BigInt, base)
 
     endpos = length(s)
@@ -81,7 +82,7 @@ function parseint(s::String, base::UInt16, ::Type{BigInt}, ::Vector{Type{<:Signe
 end
 
 function parseint(s::String, base::UInt16, ::Type{T}, overflowtypes::Vector{Type{<:Signed}}, n::T)::Integer where T <: Signed
-    i = 0 #TODO: sign
+    i = 0
     m::T = if base == BASE10
         div(typemax(T) - T(9), T(10))
     elseif base == BASE16
@@ -101,10 +102,6 @@ function parseint(s::String, base::UInt16, ::Type{T}, overflowtypes::Vector{Type
 
         n *= baseT
         n += d
-        #if i > endpos
-        #    n *= sgn
-        #    return n
-        #end
 
         c, i = iterate(s,i)::Tuple{Char, Int}
         i >= endpos && break

@@ -99,16 +99,16 @@ pretty(io::IO, obj::Bool, options::PrinterOptions, indent::Integer, imode::Bool;
 function pretty(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions, indent::Integer, imode::Bool; allownewlinecomments=true, kwargs...)
     lines = split(join(obj.comments, '\n'), '\n')
     if allownewlinecomments && length(lines) == 1 && !isprimitive(obj.element)
-        println(io, "# ", lines[1])
+        println(io, "; ", lines[1])
         print(io, options.indent^(indent-1))
     else
         count = 1
-        disallowed = Iterators.flatten((length(i) for i in findall(r"(?![^#])#*\)", line)) for line in lines)
+        disallowed = Iterators.flatten((length(i) for i in findall(r"(?![^;]);*\)", line)) for line in lines)
         while count in disallowed
             count += 1
         end
         first = true
-        print(io, '(', '#'^count, ' ')
+        print(io, '(', ';'^count, ' ')
         for line in lines
             if !first
                 println(io)
@@ -118,7 +118,7 @@ function pretty(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions, ind
             end
             print(io, line)
         end
-        print(io, ' ', '#'^count, ')')
+        print(io, ' ', ';'^count, ')')
         if allownewlinecomments
             println(io)
             print(io, options.indent^(indent-1))
@@ -127,13 +127,17 @@ function pretty(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions, ind
     pretty(io, obj.element, options, indent, imode)
 end
 
+needsspace(obj::AbstractVector, dot::Bool) = false
+needsspace(obj::AbstractDict, dot::Bool) = false
+needsspace(obj::Pair, dot::Bool) = false
+
 condensed(io::IO, obj::AbstractVector, options::PrinterOptions) = denseiter(io, obj, options)
 
 function denseiter(io::IO, obj, options::PrinterOptions)
     print(io, '(')
     first = true
     for i in obj
-        if !first
+        if !first && needsspace(i, false)
             print(io, ' ')
         else
             first = false
@@ -146,7 +150,7 @@ end
 function condensed(io::IO, obj::Pair, options::PrinterOptions)
     print(io, '(')
     condensed(io, obj.first, options)
-    print(io, " . ")
+    print(io, needsspaceafter(obj.first) ? ' ' : "", ".", needsspace(obj.second, true) ? ' ' : "")
     condensed(io, obj.second, options)
     print(io, ')')
 end
@@ -154,10 +158,15 @@ end
 condensed(io::IO, obj::AbstractDict, options::PrinterOptions) = denseiter(io, obj, options)
 
 condensed(io::IO, obj::Symbol, options::PrinterOptions) = primitiveprint(io, obj, options)
+needsspace(obj::Symbol, dot::Bool) = !dot && (string(obj) in RESERVED_SYMBOLS || isnothing(match(Literals.FULL_SYMBOL_REGEX, string(obj))))
 condensed(io::IO, obj::AbstractString, options::PrinterOptions) = primitiveprint(io, obj, options)
+needsspace(obj::AbstractString, dot::Bool) = !dot && (obj in RESERVED_SYMBOLS || isnothing(match(Literals.FULL_SYMBOL_REGEX, obj)))
 condensed(io::IO, obj::Integer, options::PrinterOptions) = primitiveprint(io, obj, options)
+needsspace(obj::Integer, dot::Bool) = true
 condensed(io::IO, obj::AbstractFloat, options::PrinterOptions) = primitiveprint(io, obj, options)
+needsspace(obj::AbstractFloat, dot::Bool) = true
 condensed(io::IO, obj::Bool, options::PrinterOptions) = primitiveprint(io, obj, options)
+needsspace(obj::Bool, dot::Bool) = !dot
 
 function primitiveprint(io::IO, obj::Symbol, options::PrinterOptions)
     primitiveprint(io, string(obj), options)
@@ -192,12 +201,26 @@ function primitiveprint(io::IO, obj::AbstractFloat, options::PrinterOptions)
 end
 
 function primitiveprint(io::IO, obj::Bool, options::PrinterOptions)
-    print(io, obj ? "true" : "false")
+    print(io, obj ? "#t" : "#f")
 end
 
 function condensed(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions)
+    if options.comments
+        for comment in obj.comments
+            count = 1
+            disallowed = [length(i) for i in findall(r"(?![^;]);*\)", comment)]
+            while count in disallowed
+                count += 1
+            end
+            print(io, '(', ';'^count, startswith(comment,';') ? ' ' : "", comment, endswith(comment,';') ? ' ' : "", ';'^count, ')')
+        end
+    end
     condensed(io, obj.element, options)
 end
+
+needsspace(obj::Hrse.CommentedElement, dot::Bool) = false
+needsspaceafter(obj) = needsspace(obj, true)
+needsspaceafter(obj::Hrse.CommentedElement) = needsspace(obj.element, true)
 
 const escapesingle(c) = if c <= Char(0o777)
     "\\" * string(UInt32(c), base=8, pad=3)

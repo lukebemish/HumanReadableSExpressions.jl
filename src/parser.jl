@@ -139,7 +139,7 @@ function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,T
     remainder = line[pos:end]
     if isspace(line[pos])
         return pos+1, ctx
-    elseif line[pos] == '#' # comment - I'll handle capturing it later
+    elseif line[pos] == ';'
         if length(line) > pos
             comment = lstrip(line[pos+1:end])
             if !isempty(comment) && ctx.options.readcomments
@@ -148,7 +148,7 @@ function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,T
         end
         return length(line)+1, ctx
     elseif line[pos] == '('
-        if length(line) > pos && line[pos+1] == '#'
+        if length(line) > pos && line[pos+1] == ';'
             return consumecomment(line, tokens, pos+1, ctx)
         end
         push!(tokens, SimpleToken(LPAREN, ctx.line, pos+ctx.posoffset))
@@ -181,21 +181,22 @@ function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,T
         return consumestring(line, tokens, pos+1, ctx)
     elseif (matched = match(Literals.SYMBOL_REGEX, remainder)) !== nothing
         return consumesymbol(matched, tokens, pos, ctx)
+    elseif line[pos] == '#' && (matched = match(Literals.SYMBOL_REGEX, remainder[2:end])) !== nothing
+        return consumeliteral(matched, tokens, pos+1, ctx)
     else
         throw(HrseSyntaxException("Unexpected character '$(line[1])'", ctx.line, pos+ctx.posoffset))
     end
-    # I'll do numbers later
 end
 
 function consumecomment(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
     pos += 1
     count = 1
-    while pos <= length(line) && line[pos] == '#'
+    while pos <= length(line) && line[pos] == ';'
         pos += 1
         count += 1
     end
     posorig = pos
-    search = Regex("[^#]"*'#'^count*"\\)")
+    search = Regex("[^;]"*';'^count*"\\)")
     found = findfirst(search, line[pos:end])
     posoffset = ctx.posoffset
     origline = ctx.line
@@ -297,12 +298,20 @@ function consumesymbol(matched, tokens, pos, ctx::TokenizerContext)::Tuple{Integ
     text = matched.match
     posorig = pos
     pos = pos+length(text)
-    if text == "true"
+    push!(tokens, StringToken(text, ctx.line, posorig+ctx.posoffset))
+    return pos, ctx
+end
+
+function consumeliteral(matched, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
+    text = matched.match
+    posorig = pos
+    pos = pos+length(text)
+    if text == "t"
         push!(tokens, SimpleToken(TRUE, ctx.line, posorig+ctx.posoffset))
-    elseif text == "false"
+    elseif text == "f"
         push!(tokens, SimpleToken(FALSE, ctx.line, posorig+ctx.posoffset))
     else
-        push!(tokens, StringToken(text, ctx.line, posorig+ctx.posoffset))
+        throw(HrseSyntaxException("Invalid hash literal '$(text)'", ctx.line, posorig+ctx.posoffset))
     end
     return pos, ctx
 end
@@ -445,7 +454,6 @@ function parsecompleteexpression(tokens, options::Hrse.ReadOptions)
         return parselistexpression(tokens, options)
     elseif tokentype(peek(tokens)) == STRING
         return parsestringexpression(tokens, options)
-    # TODO: numbers
     elseif tokentype(peek(tokens)) == TRUE || tokentype(peek(tokens)) == FALSE
         return parseboolexpression(tokens, options)
     elseif tokentype(peek(tokens)) == NUMBER
