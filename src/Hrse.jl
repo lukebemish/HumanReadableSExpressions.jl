@@ -26,6 +26,8 @@ Stores options for parsing HRSE files.
  - `readcomments = false`: Whether to read comments and store them in `CommentedElement` objects; if false, comments are
     ignored.
  - `extensions`: A collection of [`Extension`](@ref)s to HRSE.
+
+See also [`readhrse`](@ref).
 """
 struct ReadOptions
     integertypes
@@ -94,6 +96,8 @@ Stores options for printing HRSE structures to text.
  - `pairmode = COLON_MODE`: The [`PairMode`](@ref) to use when printing pairs.
  - `inlineprimitives = 20`: The maximum string length of a list of primitives to print on a single line instead of adding
     a new indentation level.
+
+See also [`writehrse`](@ref), [`ashrse`](@ref).
 """
 struct PrinterOptions
     indent::String
