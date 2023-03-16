@@ -1,16 +1,16 @@
 push!(LOAD_PATH,"../src/")
 
 using Documenter
-using Hrse
+using HumanReadableSExpressions
 
 makedocs(
-    sitename = "Hrse.jl",
+    sitename = "HumanReadableSExpressions.jl",
     format = Documenter.HTML(),
-    modules = [Hrse]
+    modules = [HumanReadableSExpressions]
 )
 
 deploydocs(
-    repo   = "github.com/lukebemish/Hrse.jl.git",
+    repo   = "github.com/lukebemish/HumanReadableSExpressions.jl.git",
     target = "build",
     push_preview = true
 )

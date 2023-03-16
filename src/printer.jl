@@ -1,7 +1,7 @@
 module Printer
 
-import ..Hrse
-import ..Hrse: PrinterOptions
+import ..HumanReadableSExpressions
+import ..HumanReadableSExpressions: HrsePrintOptions
 import ..Literals
 import ..Structures
 import StructTypes: StructType
@@ -14,11 +14,11 @@ isprimitive(::Bool) = true
 isprimitive(::Symbol) = true
 isprimitive(::AbstractString) = true
 
-function pretty(io::IO, obj::AbstractVector, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...)
+function pretty(io::IO, obj::AbstractVector, options::HrsePrintOptions, indent::Integer, imode::Bool; kwargs...)
     prettyiter(io, obj, options, indent, imode; kwargs...)
 end
 
-function prettyiter(io::IO, obj, options::PrinterOptions, indent::Integer, imode::Bool; noparenprimitive=false, root=false, kwargs...)
+function prettyiter(io::IO, obj, options::HrsePrintOptions, indent::Integer, imode::Bool; noparenprimitive=false, root=false, kwargs...)
     if all(isprimitive(i) for i in obj)
         values = [begin
             i = IOBuffer()
@@ -70,38 +70,38 @@ function prettyiter(io::IO, obj, options::PrinterOptions, indent::Integer, imode
     end
 end
 
-function pretty(io::IO, obj::Pair, options::PrinterOptions, indent::Integer, imode::Bool; forcegroup=false, kwargs...)
-    if options.pairmode == Hrse.DOT_MODE || forcegroup
+function pretty(io::IO, obj::Pair, options::HrsePrintOptions, indent::Integer, imode::Bool; forcegroup=false, kwargs...)
+    if options.pairmode == HumanReadableSExpressions.DOT_MODE || forcegroup
         print(io, '(')
         pretty(io, obj.first, options, indent, false)
         print(io, " . ")
         pretty(io, obj.second, options, indent, false)
         print(io, ')')
-    elseif options.pairmode == Hrse.EQUALS_MODE
+    elseif options.pairmode == HumanReadableSExpressions.EQUALS_MODE
         pretty(io, obj.first, options, indent, false; forcegroup=true)
         print(io, " = ")
         pretty(io, obj.second, options, indent, false)
-    elseif options.pairmode == Hrse.COLON_MODE
+    elseif options.pairmode == HumanReadableSExpressions.COLON_MODE
         pretty(io, obj.first, options, indent, false; forcegroup=true)
         print(io, ": ")
         pretty(io, obj.second, options, indent, true; allownewlinecomments=false)
     end
 end
 
-pretty(io::IO, obj::AbstractDict, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...) = prettyiter(io, obj, options, indent, imode; kwargs...)
+pretty(io::IO, obj::AbstractDict, options::HrsePrintOptions, indent::Integer, imode::Bool; kwargs...) = prettyiter(io, obj, options, indent, imode; kwargs...)
 
-pretty(io::IO, obj::Symbol, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
-pretty(io::IO, obj::AbstractString, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
-pretty(io::IO, obj::Integer, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
-pretty(io::IO, obj::AbstractFloat, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
-pretty(io::IO, obj::Bool, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
+pretty(io::IO, obj::Symbol, options::HrsePrintOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
+pretty(io::IO, obj::AbstractString, options::HrsePrintOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
+pretty(io::IO, obj::Integer, options::HrsePrintOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
+pretty(io::IO, obj::AbstractFloat, options::HrsePrintOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
+pretty(io::IO, obj::Bool, options::HrsePrintOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
 
-function pretty(io::IO, obj::T, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...) where T
+function pretty(io::IO, obj::T, options::HrsePrintOptions, indent::Integer, imode::Bool; kwargs...) where T
     translated = Structures.serialize(StructType(T), obj, options)
     pretty(io, translated, options, indent, imode; kwargs...)
 end
 
-function pretty(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions, indent::Integer, imode::Bool; allownewlinecomments=true, kwargs...)
+function pretty(io::IO, obj::HumanReadableSExpressions.CommentedElement, options::HrsePrintOptions, indent::Integer, imode::Bool; allownewlinecomments=true, kwargs...)
     lines = split(join(obj.comments, '\n'), '\n')
     if allownewlinecomments && length(lines) == 1 && !isprimitive(obj.element)
         println(io, "; ", lines[1])
@@ -136,9 +136,9 @@ needsspace(obj::AbstractVector, dot::Bool) = false
 needsspace(obj::AbstractDict, dot::Bool) = false
 needsspace(obj::Pair, dot::Bool) = false
 
-condensed(io::IO, obj::AbstractVector, options::PrinterOptions) = denseiter(io, obj, options)
+condensed(io::IO, obj::AbstractVector, options::HrsePrintOptions) = denseiter(io, obj, options)
 
-function denseiter(io::IO, obj, options::PrinterOptions)
+function denseiter(io::IO, obj, options::HrsePrintOptions)
     print(io, '(')
     first = true
     for i in obj
@@ -153,7 +153,7 @@ function denseiter(io::IO, obj, options::PrinterOptions)
     print(io, ')')
 end
 
-function condensed(io::IO, obj::Pair, options::PrinterOptions)
+function condensed(io::IO, obj::Pair, options::HrsePrintOptions)
     print(io, '(')
     tfirst = translate(obj.first, options)
     tsecond = translate(obj.second, options)
@@ -163,35 +163,35 @@ function condensed(io::IO, obj::Pair, options::PrinterOptions)
     print(io, ')')
 end
 
-condensed(io::IO, obj::AbstractDict, options::PrinterOptions) = denseiter(io, obj, options)
+condensed(io::IO, obj::AbstractDict, options::HrsePrintOptions) = denseiter(io, obj, options)
 
-condensed(io::IO, obj::Symbol, options::PrinterOptions) = primitiveprint(io, obj, options)
+condensed(io::IO, obj::Symbol, options::HrsePrintOptions) = primitiveprint(io, obj, options)
 needsspace(obj::Symbol, dot::Bool) = !dot && Literals.issymbol(string(obj))
-condensed(io::IO, obj::AbstractString, options::PrinterOptions) = primitiveprint(io, obj, options)
+condensed(io::IO, obj::AbstractString, options::HrsePrintOptions) = primitiveprint(io, obj, options)
 needsspace(obj::AbstractString, dot::Bool) = !dot && Literals.issymbol(string(obj))
-condensed(io::IO, obj::Integer, options::PrinterOptions) = primitiveprint(io, obj, options)
+condensed(io::IO, obj::Integer, options::HrsePrintOptions) = primitiveprint(io, obj, options)
 needsspace(obj::Integer, dot::Bool) = true
-condensed(io::IO, obj::AbstractFloat, options::PrinterOptions) = primitiveprint(io, obj, options)
+condensed(io::IO, obj::AbstractFloat, options::HrsePrintOptions) = primitiveprint(io, obj, options)
 needsspace(obj::AbstractFloat, dot::Bool) = true
-condensed(io::IO, obj::Bool, options::PrinterOptions) = primitiveprint(io, obj, options)
+condensed(io::IO, obj::Bool, options::HrsePrintOptions) = primitiveprint(io, obj, options)
 needsspace(obj::Bool, dot::Bool) = !dot
 
-translate(obj::AbstractDict, options::PrinterOptions) = obj
-translate(obj::Pair, options::PrinterOptions) = obj
-translate(obj::AbstractVector, options::PrinterOptions) = obj
-translate(obj::Symbol, options::PrinterOptions) = obj
-translate(obj::AbstractString, options::PrinterOptions) = obj
-translate(obj::Integer, options::PrinterOptions) = obj
-translate(obj::AbstractFloat, options::PrinterOptions) = obj
-translate(obj::Bool, options::PrinterOptions) = obj
-translate(obj::Hrse.CommentedElement, options::PrinterOptions) = obj
-translate(obj::T, options::PrinterOptions) where T = Structures.serialize(StructType(T), obj, options)
+translate(obj::AbstractDict, options::HrsePrintOptions) = obj
+translate(obj::Pair, options::HrsePrintOptions) = obj
+translate(obj::AbstractVector, options::HrsePrintOptions) = obj
+translate(obj::Symbol, options::HrsePrintOptions) = obj
+translate(obj::AbstractString, options::HrsePrintOptions) = obj
+translate(obj::Integer, options::HrsePrintOptions) = obj
+translate(obj::AbstractFloat, options::HrsePrintOptions) = obj
+translate(obj::Bool, options::HrsePrintOptions) = obj
+translate(obj::HumanReadableSExpressions.CommentedElement, options::HrsePrintOptions) = obj
+translate(obj::T, options::HrsePrintOptions) where T = Structures.serialize(StructType(T), obj, options)
 
-function primitiveprint(io::IO, obj::Symbol, options::PrinterOptions)
+function primitiveprint(io::IO, obj::Symbol, options::HrsePrintOptions)
     primitiveprint(io, string(obj), options)
 end
 
-function primitiveprint(io::IO, obj::AbstractString, options::PrinterOptions)
+function primitiveprint(io::IO, obj::AbstractString, options::HrsePrintOptions)
     if Literals.issymbol(string(obj))
         print(io, obj)
     else
@@ -209,11 +209,11 @@ function primitiveprint(io::IO, obj::AbstractString, options::PrinterOptions)
     end
 end
 
-function primitiveprint(io::IO, obj::Integer, options::PrinterOptions)
+function primitiveprint(io::IO, obj::Integer, options::HrsePrintOptions)
     print(io, string(obj, base=10))
 end
 
-function primitiveprint(io::IO, obj::AbstractFloat, options::PrinterOptions)
+function primitiveprint(io::IO, obj::AbstractFloat, options::HrsePrintOptions)
     if isinf(obj)
         print(io, obj < 0 ? "-#inf" : "#inf")
     elseif isnan(obj)
@@ -223,11 +223,11 @@ function primitiveprint(io::IO, obj::AbstractFloat, options::PrinterOptions)
     end
 end
 
-function primitiveprint(io::IO, obj::Bool, options::PrinterOptions)
+function primitiveprint(io::IO, obj::Bool, options::HrsePrintOptions)
     print(io, obj ? "#t" : "#f")
 end
 
-function condensed(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions)
+function condensed(io::IO, obj::HumanReadableSExpressions.CommentedElement, options::HrsePrintOptions)
     if options.comments
         for comment in obj.comments
             count = 1
@@ -241,11 +241,11 @@ function condensed(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions)
     condensed(io, translate(obj.element, options), options)
 end
 
-condensed(io, obj::T, options::PrinterOptions) where T = condensed(io, translate(obj, options), options)
+condensed(io, obj::T, options::HrsePrintOptions) where T = condensed(io, translate(obj, options), options)
 
-needsspace(obj::Hrse.CommentedElement, dot::Bool) = false
+needsspace(obj::HumanReadableSExpressions.CommentedElement, dot::Bool) = false
 needsspaceafter(obj) = needsspace(obj, true)
-needsspaceafter(obj::Hrse.CommentedElement) = needsspace(obj.element, true)
+needsspaceafter(obj::HumanReadableSExpressions.CommentedElement) = needsspace(obj.element, true)
 
 const escapesingle(c) = if c <= Char(0o777)
     "\\" * string(UInt32(c), base=8, pad=3)

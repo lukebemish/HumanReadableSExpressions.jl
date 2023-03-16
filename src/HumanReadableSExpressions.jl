@@ -1,4 +1,6 @@
-module Hrse
+module HumanReadableSExpressions
+
+export HrseReadOptions, HrsePrintOptions, readhrse, writehrse, ashrse
 
 import StructTypes
 
@@ -17,7 +19,7 @@ See also [`Extension`](@ref).
 DENSE;
 
 """
-    ReadOptions(kwargs...)
+    HrseReadOptions(kwargs...)
 
 Stores options for parsing HRSE files.
 
@@ -31,12 +33,12 @@ Stores options for parsing HRSE files.
 
 See also [`readhrse`](@ref).
 """
-struct ReadOptions
+struct HrseReadOptions
     integertypes
     floattype::Type{<:AbstractFloat}
     readcomments::Bool
     extensions
-    ReadOptions(;
+    HrseReadOptions(;
     integertypes = [Int64, BigInt],
     floattype::Type{<:AbstractFloat} = Float64,
     readcomments::Bool = false,
@@ -87,7 +89,7 @@ See also [`PairMode`](@ref).
 COLON_MODE;
 
 """
-    PrinterOptions(kwargs...)
+    HrsePrintOptions(kwargs...)
 
 Stores options for printing HRSE structures to text.
 
@@ -102,14 +104,14 @@ Stores options for printing HRSE structures to text.
 
 See also [`writehrse`](@ref), [`ashrse`](@ref).
 """
-struct PrinterOptions
+struct HrsePrintOptions
     indent::String
     comments::Bool
     extensions
     pairmode::PairMode
     inlineprimitives::Integer
     trailingnewline::Bool
-    PrinterOptions(;
+    HrsePrintOptions(;
     indent::String="  ",
     comments::Bool=true,
     extensions=[],
@@ -141,8 +143,8 @@ include("printer.jl")
 
 
 """
-    readhrse(hrse::IO; options=ReadOptions(); type=nothing)
-    readhrse(hrse::String; options=ReadOptions(); type=nothing)
+    readhrse(hrse::IO; options=HrseReadOptions(); type=nothing)
+    readhrse(hrse::String; options=HrseReadOptions(); type=nothing)
 
 Reads an HRSE file from the given IO object or string and returns the corresponding Julia object. The `options` argument can
 be used to configure the parser. Lists will be read as vectors, pairs as a Pair, symbols and strings as a String, and 
@@ -151,7 +153,7 @@ as the given type using its StructTypes.StructType.
 
 # Examples
 ```jldoctest
-julia> import Hrse
+julia> using HumanReadableSExpressions
 
 julia> hrse = \"\"\"
        alpha:
@@ -165,16 +167,16 @@ julia> hrse = \"\"\"
            c: "c"
        \"\"\";
 
-julia> Hrse.readhrse(hrse)
+julia> readhrse(hrse)
 3-element Vector{Pair{String}}:
  "alpha" => [[1, 2, 3, 4], [5, 6], [7, 8, 9]]
   "beta" => (0 => 3)
  "gamma" => Pair{String}["a" => 1, "b" => 2, "c" => "c"]
 ```
 
-See also [`ReadOptions`](@ref).
+See also [`HrseReadOptions`](@ref).
 """
-function readhrse(hrse::IO; options::ReadOptions=ReadOptions(), type::Union{Type, Nothing}=nothing)
+function readhrse(hrse::IO; options::HrseReadOptions=HrseReadOptions(), type::Union{Type, Nothing}=nothing)
     dense = DENSE in options.extensions
     source = Parser.LexerSource(hrse, options)
     Parser.runmachine(source)
@@ -197,11 +199,11 @@ function readhrse(hrse::IO; options::ReadOptions=ReadOptions(), type::Union{Type
     return obj
 end
 
-readhrse(hrse::String; options::ReadOptions=ReadOptions(), type::Union{Type, Nothing}=nothing) = readhrse(IOBuffer(hrse), options=options, type=type)
+readhrse(hrse::String; options::HrseReadOptions=HrseReadOptions(), type::Union{Type, Nothing}=nothing) = readhrse(IOBuffer(hrse), options=options, type=type)
 
 """
-    writehrse(io::IO, obj, options::PrinterOptions)
-    writehrse(obj, options::PrinterOptions)
+    writehrse(io::IO, obj, options::HrsePrintOptions)
+    writehrse(obj, options::HrsePrintOptions)
 
 Writes the given Julia object to the given IO object as a HRSE file. The `options` argument can be used to configure the
 behavior of the printer. If no IO object is given, the output is written to `stdout`. Arbitrary objects are serialized
@@ -209,7 +211,7 @@ using their StructTypes.StructType.
 
 # Examples
 ```jldoctest
-julia> import Hrse
+julia> using HumanReadableSExpressions
 
 julia> hrse = [
            :alpha => [
@@ -225,7 +227,7 @@ julia> hrse = [
            ]
        ];
 
-julia> Hrse.writehrse(hrse, Hrse.PrinterOptions())
+julia> writehrse(hrse, HumanReadableSExpressions.HrsePrintOptions())
 alpha: 
   1 2 3 4
   5 6
@@ -237,9 +239,9 @@ gamma:
   c: c
 ```
 
-See also [`PrinterOptions`](@ref).
+See also [`HrsePrintOptions`](@ref).
 """
-function writehrse(io::IO, obj, options::PrinterOptions)
+function writehrse(io::IO, obj, options::HrsePrintOptions)
     toprint = (DENSE in options.extensions) ? [obj] : obj
     if options.pairmode == CONDENSED_MODE
         o = Printer.translate(toprint, options)
@@ -252,17 +254,17 @@ function writehrse(io::IO, obj, options::PrinterOptions)
     end
 end
 
-writehrse(obj, options::PrinterOptions) = writehrse(stdout, obj, options)
+writehrse(obj, options::HrsePrintOptions) = writehrse(stdout, obj, options)
 
 """
-    ashrse(obj, options::PrinterOptions)
+    ashrse(obj, options::HrsePrintOptions)
 
 Returns the given Julia object as a string containing a HRSE file. The `options` argument can be used to configure the
 behavior of the printer.
 
-See also [`writehrse`](@ref), [`PrinterOptions`](@ref).
+See also [`writehrse`](@ref), [`HrsePrintOptions`](@ref).
 """
-ashrse(obj, options::PrinterOptions) = begin
+ashrse(obj, options::HrsePrintOptions) = begin
     io = IOBuffer()
     writehrse(io, obj, options)
     return String(take!(io))

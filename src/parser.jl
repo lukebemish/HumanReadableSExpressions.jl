@@ -1,6 +1,6 @@
 module Parser
 
-import ..Hrse
+import ..HumanReadableSExpressions
 import ..Literals
 import ..Literals: issymbolstartbanned, issymbolstart, issymbolbody
 
@@ -110,8 +110,8 @@ mutable struct LexerSource
     line::Integer
     pos::Integer
     tokens::Vector{Token}
-    options::Hrse.ReadOptions
-    LexerSource(io::IO, options::Hrse.ReadOptions) = new(Char[], Position[], io, 1, 0, Token[], options)
+    options::HumanReadableSExpressions.HrseReadOptions
+    LexerSource(io::IO, options::HumanReadableSExpressions.HrseReadOptions) = new(Char[], Position[], io, 1, 0, Token[], options)
 end
 
 function emit(source::LexerSource, token::Token)
@@ -551,7 +551,7 @@ struct CommentExpression <: Expression
     expression::Expression
 end
 
-function parsefile(tokens, options::Hrse.ReadOptions)
+function parsefile(tokens, options::HumanReadableSExpressions.HrseReadOptions)
     inner = Expression[]
     baseindent = peek(tokens)
     comments = []
@@ -599,7 +599,7 @@ function stripindent(tokens)
     end
 end
 
-function parsecomments(tokens, options::Hrse.ReadOptions)
+function parsecomments(tokens, options::HumanReadableSExpressions.HrseReadOptions)
     comments = []
     indent = stripindent(tokens)
     while tokentype(peek(tokens)) == COMMENT
@@ -615,7 +615,7 @@ function parsecomments(tokens, options::Hrse.ReadOptions)
     return options.readcomments ? comments : []
 end
 
-function parseexpression(tokens, options::Hrse.ReadOptions)
+function parseexpression(tokens, options::HumanReadableSExpressions.HrseReadOptions)
     comments = parsecomments(tokens, options)
     if !isempty(comments)
         return CommentExpression([i.comment for i in comments], parseexpression(tokens, options))
@@ -649,7 +649,7 @@ function parseexpression(tokens, options::Hrse.ReadOptions)
     end
 end
 
-function parsecompleteexpression(tokens, options::Hrse.ReadOptions)
+function parsecompleteexpression(tokens, options::HumanReadableSExpressions.HrseReadOptions)
     if tokentype(peek(tokens)) == LPAREN
         return parselistexpression(tokens, options)
     elseif tokentype(peek(tokens)) == STRING
@@ -666,7 +666,7 @@ function parsecompleteexpression(tokens, options::Hrse.ReadOptions)
     end
 end
 
-function parselistexpression(tokens, options::Hrse.ReadOptions)
+function parselistexpression(tokens, options::HumanReadableSExpressions.HrseReadOptions)
     consume(tokens)
     expressions = Expression[]
     dotexpr = false
@@ -698,7 +698,7 @@ function parselistexpression(tokens, options::Hrse.ReadOptions)
     return ListExpression(expressions)
 end
 
-function parsestringexpression(tokens, options::Hrse.ReadOptions)
+function parsestringexpression(tokens, options::HumanReadableSExpressions.HrseReadOptions)
     token = consume(tokens)
     if token.multiline
         lines = StringToken[token]
@@ -724,12 +724,12 @@ function parsestringexpression(tokens, options::Hrse.ReadOptions)
     return StringExpression(token.value)
 end
 
-function parseboolexpression(tokens, options::Hrse.ReadOptions)
+function parseboolexpression(tokens, options::HumanReadableSExpressions.HrseReadOptions)
     token = consume(tokens)
     return BoolExpression(tokentype(token) == TRUE)
 end
 
-function parseimodelineexpression(tokens, options::Hrse.ReadOptions)
+function parseimodelineexpression(tokens, options::HumanReadableSExpressions.HrseReadOptions)
     expressions = Expression[]
     while tokentype(peek(tokens)) == INDENT
         consume(tokens)
@@ -759,27 +759,27 @@ function parseimodelineexpression(tokens, options::Hrse.ReadOptions)
     return ListExpression(expressions)
 end
 
-function translate(expression::ListExpression, options::Hrse.ReadOptions)
+function translate(expression::ListExpression, options::HumanReadableSExpressions.HrseReadOptions)
     [translate(e, options) for e in expression.expressions]
 end
 
-function translate(expression::DotExpression, options::Hrse.ReadOptions)
+function translate(expression::DotExpression, options::HumanReadableSExpressions.HrseReadOptions)
     translate(expression.left, options) => translate(expression.right, options)
 end
 
-function translate(expression::StringExpression, ::Hrse.ReadOptions)
+function translate(expression::StringExpression, ::HumanReadableSExpressions.HrseReadOptions)
     expression.string
 end
 
-function translate(expression::BoolExpression, ::Hrse.ReadOptions)
+function translate(expression::BoolExpression, ::HumanReadableSExpressions.HrseReadOptions)
     expression.value
 end
 
-function translate(expression::CommentExpression, options::Hrse.ReadOptions)
-    return Hrse.CommentedElement(translate(expression.expression, options),expression.comments)
+function translate(expression::CommentExpression, options::HumanReadableSExpressions.HrseReadOptions)
+    return HumanReadableSExpressions.CommentedElement(translate(expression.expression, options),expression.comments)
 end
 
-function translate(expression::NumberExpression, ::Hrse.ReadOptions)
+function translate(expression::NumberExpression, ::HumanReadableSExpressions.HrseReadOptions)
     expression.value
 end
 
