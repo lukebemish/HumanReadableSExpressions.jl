@@ -98,6 +98,7 @@ Stores options for printing HRSE structures to text.
  - `pairmode = COLON_MODE`: The [`PairMode`](@ref) to use when printing pairs.
  - `inlineprimitives = 20`: The maximum string length of a list of primitives to print on a single line instead of adding
     a new indentation level.
+ - `trailingnewline = true`: Whether to print a trailing newline at the end of the file.
 
 See also [`writehrse`](@ref), [`ashrse`](@ref).
 """
@@ -140,12 +141,13 @@ include("printer.jl")
 
 
 """
-    readhrse(hrse::IO; options=ReadOptions())
-    readhrse(hrse::String; options=ReadOptions())
+    readhrse(hrse::IO; options=ReadOptions(); type=nothing)
+    readhrse(hrse::String; options=ReadOptions(); type=nothing)
 
 Reads an HRSE file from the given IO object or string and returns the corresponding Julia object. The `options` argument can
 be used to configure the parser. Lists will be read as vectors, pairs as a Pair, symbols and strings as a String, and 
-numeric types as the corresponding Julia type defined in the parser options.
+numeric types as the corresponding Julia type defined in the parser options. If `type` is given, the result will be parsed
+as the given type using its StructTypes.StructType.
 
 # Examples
 ```jldoctest
@@ -200,7 +202,8 @@ readhrse(hrse::String; options::ReadOptions=ReadOptions(), type::Union{Type, Not
     writehrse(obj, options::PrinterOptions)
 
 Writes the given Julia object to the given IO object as a HRSE file. The `options` argument can be used to configure the
-behavior of the printer. If no IO object is given, the output is written to `stdout`.
+behavior of the printer. If no IO object is given, the output is written to `stdout`. Arbitrary objects are serialized
+using their StructTypes.StructType.
 
 # Examples
 ```jldoctest
