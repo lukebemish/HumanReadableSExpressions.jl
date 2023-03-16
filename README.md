@@ -2,7 +2,9 @@
 
 ### Documentation
 
-[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://lukebemish.dev/Hrse.jl/dev)[![Build Status](https://github.com/lukebemish/Hrse.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/lukebemish/Hrse.jl/actions/workflows/CI.yml?query=branch%3Amain) [![Coverage](https://codecov.io/gh/lukebemish/Hrse.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/lukebemish/Hrse.jl)
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://lukebemish.dev/Hrse.jl/dev)
+[![Build Status](https://github.com/lukebemish/Hrse.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/lukebemish/Hrse.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Coverage](https://codecov.io/gh/lukebemish/Hrse.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/lukebemish/Hrse.jl)
 
 ### Human Readable S-Expressions
 
