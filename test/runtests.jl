@@ -45,10 +45,12 @@ StructTypes.StructType(::Type{Bar}) = StructTypes.Mutable()
 hrse = """
 (; this is great for testing edge cases ;;) 
    and comment formats;)
+(;;; mostly just various multiline comments... 
+  ;) ;;;;) ;;;)
 a: 1
 b: 2
 c:
-(; should still parse ;)
+(;;; should still parse ;;;)
     1
     2
 (; ;)
@@ -142,7 +144,7 @@ bar.c = 3.14
 @test readhrse("((a.(((a. 2)(b.bar)).bar))(b.(((a. 3)(b.baz))((a. 4)(b.qux))))(c. 3.14))", type=Bar, options=HrseReadOptions(extensions=[HumanReadableSExpressions.DENSE])) !== nothing
 
 hrse = """
-(; Yeah, let's just test every type imaginable... ;)
+; Yeah, let's just test every type imaginable...
 1
 999999999999999999999999
 1e1
@@ -192,6 +194,13 @@ hrse = """
 """
 
 @test readhrse(hrse) == [282574486936592, 26, -10, -16, 20]
+
+hrse = """
+"\\u{1234}\\012\\03abc\\a\\e\\\\\\"\\r\\n\\f\\b\\v\\t\\u{12}"
+"""
+
+@test readhrse(hrse, options=HrseReadOptions(extensions=[HumanReadableSExpressions.DENSE])) == "\u1234\n\x03abc\a\e\\\"\r\n\f\b\v\t\x12"
+
 
 # Encoding
 
@@ -332,10 +341,45 @@ a: \"\"\"
 @test_throws HrseSyntaxException readhrse(".a")
 @test_throws HrseSyntaxException readhrse("0stuff")
 @test readhrse("_1 not-a-number") == [["_1", "not-a-number"]]
-@test_throws HrseSyntaxException readhrse("#invalid-literal")
+@test_throws "HrseSyntaxException: Invalid literal '#invalid-literal' at line 1, column 1" readhrse("#invalid-literal")
 
 @test_throws HrseSyntaxException readhrse("\"\a\"")
 @test_throws HrseSyntaxException readhrse("a\u00AD")
 @test_throws HrseSyntaxException readhrse("a\U2019")
 @test readhrse("a^") == ["a^"]
 @test readhrse("a1") == ["a1"]
+
+@test_throws "HrseSyntaxException: Unterminated string at line 1, column 4" readhrse("""
+a: \" stuff
+""")
+
+@test_throws "HrseSyntaxException: Unterminated string at line 1, column 4" readhrse("""
+a: \"\"\" stuff
+""")
+
+@test_throws "HrseSyntaxException: Unterminated multiline comment at line 1, column 1" readhrse("""
+(;
+""")
+
+@test_throws "HrseSyntaxException: Unterminated multiline comment at line 1, column 1" readhrse("""
+(; ;;)
+""")
+
+@test_throws "HrseSyntaxException: Unterminated multiline comment at line 1, column 1" readhrse("""
+(;; ;) 
+""")
+
+@test_throws "HrseSyntaxException: Invalid number '200000' at line 1, column 1" readhrse("200000", options=HrseReadOptions(integertypes=[Int8]))
+
+@test_throws HrseSyntaxException readhrse("\"abc\"def")
+@test_throws HrseSyntaxException readhrse("\"abc\"\"def\"")
+
+# Test indents
+
+@test_throws "HrseSyntaxException: Unexpected indent level at line 4, column 1" readhrse("""
+a:
+  a
+  b
+   c
+  d
+""")

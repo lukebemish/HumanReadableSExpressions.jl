@@ -88,7 +88,7 @@ function parseunsigned(s::String, types::Vector{Type{<:Signed}})
     return parseint(s, BASE10, types[1], types[2:end], zero(types[1]))
 end
 
-function parseint(s::String, base::UInt16, ::Type{BigInt}, ::Vector{Type{<:Signed}}, n::BigInt)::BigInt
+function parseint(s::String, base::UInt16, ::Type{BigInt}, ::Vector{Type{<:Signed}}, n::BigInt)::Union{BigInt, Nothing}
     i = 0
     base = convert(BigInt, base)
 
@@ -107,7 +107,7 @@ function parseint(s::String, base::UInt16, ::Type{BigInt}, ::Vector{Type{<:Signe
     return n
 end
 
-function parseint(s::String, base::UInt16, ::Type{T}, overflowtypes::Vector{Type{<:Signed}}, n::T)::Integer where T <: Signed
+function parseint(s::String, base::UInt16, ::Type{T}, overflowtypes::Vector{Type{<:Signed}}, n::T)::Union{Integer, Nothing} where T <: Signed
     i = 0
     m::T = if base == BASE10
         div(typemax(T) - T(9), T(10))
