@@ -176,7 +176,9 @@ See also [`ReadOptions`](@ref).
 """
 function readhrse(hrse::IO; options::ReadOptions=ReadOptions(), type::Union{Type, Nothing}=nothing)
     dense = DENSE in options.extensions
-    tokens = Parser.Tokens(Parser.tokenize(hrse, options), nothing, [])
+    source = Parser.LexerSource(hrse, options)
+    Parser.runmachine(source)
+    tokens = Parser.Tokens(source.tokens, nothing, [])
     parsetree = Parser.parsefile(tokens, options)
     # discard trailing comments
     Parser.parsecomments(tokens, options)

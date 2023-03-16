@@ -14,8 +14,6 @@ isprimitive(::Bool) = true
 isprimitive(::Symbol) = true
 isprimitive(::AbstractString) = true
 
-const RESERVED_SYMBOLS = ["true", "false"]
-
 function pretty(io::IO, obj::AbstractVector, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...)
     prettyiter(io, obj, options, indent, imode; kwargs...)
 end
@@ -160,7 +158,7 @@ function condensed(io::IO, obj::Pair, options::PrinterOptions)
     tfirst = translate(obj.first, options)
     tsecond = translate(obj.second, options)
     condensed(io, tfirst, options)
-    print(io, tfirst ? ' ' : "", ".", needsspace(tsecond, true) ? ' ' : "")
+    print(io, needsspaceafter(tfirst) ? ' ' : "", ".", needsspace(tsecond, true) ? ' ' : "")
     condensed(io, tsecond, options)
     print(io, ')')
 end
@@ -168,9 +166,9 @@ end
 condensed(io::IO, obj::AbstractDict, options::PrinterOptions) = denseiter(io, obj, options)
 
 condensed(io::IO, obj::Symbol, options::PrinterOptions) = primitiveprint(io, obj, options)
-needsspace(obj::Symbol, dot::Bool) = !dot && (string(obj) in RESERVED_SYMBOLS || isnothing(match(Literals.FULL_SYMBOL_REGEX, string(obj))))
+needsspace(obj::Symbol, dot::Bool) = !dot && Literals.issymbol(string(obj))
 condensed(io::IO, obj::AbstractString, options::PrinterOptions) = primitiveprint(io, obj, options)
-needsspace(obj::AbstractString, dot::Bool) = !dot && (obj in RESERVED_SYMBOLS || isnothing(match(Literals.FULL_SYMBOL_REGEX, obj)))
+needsspace(obj::AbstractString, dot::Bool) = !dot && Literals.issymbol(string(obj))
 condensed(io::IO, obj::Integer, options::PrinterOptions) = primitiveprint(io, obj, options)
 needsspace(obj::Integer, dot::Bool) = true
 condensed(io::IO, obj::AbstractFloat, options::PrinterOptions) = primitiveprint(io, obj, options)
@@ -194,9 +192,7 @@ function primitiveprint(io::IO, obj::Symbol, options::PrinterOptions)
 end
 
 function primitiveprint(io::IO, obj::AbstractString, options::PrinterOptions)
-    if obj in RESERVED_SYMBOLS
-        print(io, '"', obj, '"')
-    elseif !isnothing(match(Literals.FULL_SYMBOL_REGEX, obj))
+    if Literals.issymbol(string(obj))
         print(io, obj)
     else
         print(io, '"')
@@ -244,6 +240,8 @@ function condensed(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions)
     end
     condensed(io, translate(obj.element, options), options)
 end
+
+condensed(io, obj::T, options::PrinterOptions) where T = condensed(io, translate(obj, options), options)
 
 needsspace(obj::Hrse.CommentedElement, dot::Bool) = false
 needsspaceafter(obj) = needsspace(obj, true)

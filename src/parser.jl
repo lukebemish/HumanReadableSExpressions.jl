@@ -2,8 +2,11 @@ module Parser
 
 import ..Hrse
 import ..Literals
+import ..Literals: issymbolstartbanned, issymbolstart, issymbolbody
 
 import Base: eof, push!
+
+import Unicode
 
 abstract type Token end
 
@@ -64,6 +67,7 @@ tokentype(::StringToken) = STRING
 tokentype(::NumberToken) = NUMBER
 tokentype(::CommentToken) = COMMENT
 tokentype(::IndentToken) = INDENT
+tokentype(::Nothing) = nothing
 
 const LPAREN = :LPAREN
 const RPAREN = :RPAREN
@@ -91,225 +95,354 @@ Base.showerror(io::IO, e::HrseSyntaxException) = begin
     print(io, "HrseSyntaxException: ", e.msg, " at line ", e.line, ", column ", e.pos)
 end
 
-struct TokenizerContext
+struct Position
     line::Integer
-    linetext::String
+    pos::Integer
+end
+
+mutable struct LexerSource
+    leading::Vector{Char}
+    positions::Vector{Position}
     io::IO
-    posoffset::Integer
+    line::Integer
+    pos::Integer
+    tokens::Vector{Token}
     options::Hrse.ReadOptions
+    LexerSource(io::IO, options::Hrse.ReadOptions) = new(Char[], Position[], io, 1, 0, Token[], options)
 end
 
-function addline(line::TokenizerContext)::TokenizerContext
-    newline = readline(line.io)
-    return TokenizerContext(line.line+1, line.linetext*'\n'*newline, line.io, line.posoffset-length(line)-1, line.options)
-end
-
-function eof(line::TokenizerContext)
-    return eof(line.io)
-end
-
-function tokenize(io::IO, options::Hrse.ReadOptions)
-    tokens = Token[]
-    linenumber = 0
-    while !eof(io)
-        line = readline(io)
-        linenumber += 1
-        if all(isspace(i) for i in line)
-            continue # ignore whitespace
-        end
-        indent = match(r"^\s*", line).match
-        push!(tokens, IndentToken(indent, linenumber, 0))
-        line = lstrip(line)
-        tokenizeline(tokens, TokenizerContext(linenumber, line, io, length(indent), options))
+function emit(source::LexerSource, token::Token)
+    if (tokentype(token) == INDENT || tokentype(token) == EOF) &&
+        length(source.tokens) > 0 && tokentype(source.tokens[end]) == INDENT
+        source.tokens[end] = token
+        return source.tokens
     end
-    push!(tokens, SimpleToken(EOF, linenumber+1, 0))
-    return tokens
+    push!(source.tokens, token)
 end
 
-function tokenizeline(tokens, ctx::TokenizerContext)
-    pos = 1
-    newtokens = Token[]
-    while pos <= length(ctx.linetext)
-        pos, ctx = consumetoken(ctx.linetext, newtokens, pos, ctx)
+function consume(source::LexerSource)
+    if length(source.leading)==0 && eof(source.io)
+        return nothing
     end
-    push!(tokens, newtokens...)
-end
-
-function consumetoken(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
-    remainder = line[pos:end]
-    if isspace(line[pos])
-        return pos+1, ctx
-    elseif line[pos] == ';'
-        if length(line) > pos
-            comment = lstrip(line[pos+1:end])
-            if !isempty(comment) && ctx.options.readcomments
-                push!(tokens, CommentToken(comment, ctx.line, pos+ctx.posoffset))
-            end 
-        end
-        return length(line)+1, ctx
-    elseif line[pos] == '('
-        if length(line) > pos && line[pos+1] == ';'
-            return consumecomment(line, tokens, pos+1, ctx)
-        end
-        push!(tokens, SimpleToken(LPAREN, ctx.line, pos+ctx.posoffset))
-        return pos+1, ctx
-    elseif line[pos] == ')'
-        push!(tokens, SimpleToken(RPAREN, ctx.line, pos+ctx.posoffset))
-        return pos+1, ctx
-    elseif line[pos] == '='
-        push!(tokens, SimpleToken(EQUALS, ctx.line, pos+ctx.posoffset))
-        return pos+1, ctx
-    elseif (matched = match(Literals.FLOAT_REGEX, remainder)) !== nothing
-        text = string(matched.match)
-        push!(tokens, NumberToken(Literals.parsefloat(text; type=ctx.options.floattype), ctx.line, pos+ctx.posoffset))
-        return pos+length(text), ctx
-    elseif (matched = match(Literals.INT_REGEX, remainder)) !== nothing
-        text = string(matched.match)
-        parsed = Literals.parseint(text; types=ctx.options.integertypes)
-        if parsed === nothing
-            throw(HrseSyntaxException("Invalid integer literal '$(matched.match)'; may be out of bounds", ctx.line, pos+ctx.posoffset))
-        end
-        push!(tokens, NumberToken(parsed, ctx.line, pos+ctx.posoffset))
-        return pos+length(text), ctx
-    elseif line[pos] == '.'
-        push!(tokens, SimpleToken(DOT, ctx.line, pos+ctx.posoffset))
-        return pos+1, ctx
-    elseif line[pos] == ':'
-        push!(tokens, SimpleToken(COLON, ctx.line, pos+ctx.posoffset))
-        return pos+1, ctx
-    elseif line[pos] == '"'
-        return consumestring(line, tokens, pos+1, ctx)
-    elseif (matched = match(Literals.SYMBOL_REGEX, remainder)) !== nothing
-        return consumesymbol(matched, tokens, pos, ctx)
-    elseif line[pos] == '#' && (matched = match(Literals.SYMBOL_REGEX, remainder[2:end])) !== nothing
-        return consumeliteral(matched, tokens, pos+1, ctx)
-    elseif startswith(remainder, "+#inf")
-        push!(tokens, NumberToken(ctx.options.floattype(Inf), ctx.line, pos+ctx.posoffset))
-        return pos+4, ctx
-    elseif startswith(remainder, "-#inf")
-        push!(tokens, NumberToken(ctx.options.floattype(-Inf), ctx.line, pos+ctx.posoffset))
-        return pos+4, ctx
-    else
-        throw(HrseSyntaxException("Unexpected character '$(line[1])'", ctx.line, pos+ctx.posoffset))
-    end
-end
-
-function consumecomment(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
-    pos += 1
-    count = 1
-    while pos <= length(line) && line[pos] == ';'
-        pos += 1
-        count += 1
-    end
-    posorig = pos
-    search = Regex("[^;]"*';'^count*"\\)")
-    found = findfirst(search, line[pos:end])
-    posoffset = ctx.posoffset
-    origline = ctx.line
-    while isnothing(found) && !eof(ctx)
-        pos = length(line)
-        ctx = addline(ctx)
-        line = ctx.linetext
-        found = findfirst(search, line[pos:end])
-    end
-    if isnothing(found)
-        throw(HrseSyntaxException("Unterminated comment", origline, posorig+posoffset))
-    end
-    comment = line[posorig:pos+found[1]-1]
-    push!(tokens, CommentToken(strip(comment), origline, posorig+posoffset))
-    return pos+found[end], ctx
-end
-
-function consumestring(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
-    posorig = pos
-    builder = Char[]
-    while pos <= length(line) && line[pos] != '"'
-        if line[pos] == '\\'
-            pos += 1
-            if pos > length(line)
-                throw(HrseSyntaxException("Unterminated string", ctx.line, posorig+ctx.posoffset))
-            end
-            char = line[pos]
-            if char == 'n'
-                push!(builder, '\n')
-                pos += 1
-            elseif char == 't'
-                push!(builder, '\t')
-                pos += 1
-            elseif char == 'r'
-                push!(builder, '\r')
-                pos += 1
-            elseif char == 'b'
-                push!(builder, '\b')
-                pos += 1
-            elseif char == 'f'
-                push!(builder, '\f')
-                pos += 1
-            elseif char == 'v'
-                push!(builder, '\v')
-                pos += 1
-            elseif char == 'a'
-                push!(builder, '\a')
-                pos += 1
-            elseif char == 'e'
-                push!(builder, '\e')
-                pos += 1
-            elseif char == '\\'
-                push!(builder, '\\')
-                pos += 1
-            elseif char == '"'
-                push!(builder, '"')
-                pos += 1
-            elseif char == 'u'
-                matched = match(r"^\{[0-9a-fA-F]+\}", line[pos+1:end])
-                if isnothing(matched)
-                    throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", ctx.line, pos+ctx.posoffset))
-                end
-                push!(builder, Char(parse(UInt32, matched.match[2:end-1]; base=16)))
-                pos += length(matched.match)
-            elseif '0' <= char < '8'
-                matched = match(r"^[0-7]{1,3}", line[pos:end])
-                push!(builder, Char(parse(UInt8, matched.match; base=8)))
-                pos += length(matched.match)-1
-            else
-                throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", ctx.line, pos+ctx.posoffset))
-            end
+    if length(source.leading) == 0
+        c = read(source.io, Char)
+        if c == '\n'
+            source.line += 1
+            source.pos = 0
         else
-            push!(builder, line[pos])
-            pos += 1
+            source.pos += 1
+        end
+        return c
+    else
+        c = popfirst!(source.leading)
+        pos = popfirst!(source.positions)
+        source.line = pos.line
+        source.pos = pos.pos
+        return c
+    end
+end
+
+function peek(source::LexerSource; num=1)
+    if length(source.leading) < num
+        for i in 1:num
+            if eof(source.io)
+                return nothing
+            end
+            c = read(source.io, Char)
+            lastpos = length(source.leading) == 0 ? Position(source.line, source.pos) : source.positions[end]
+            push!(source.leading, c)
+            pos = lastpos.pos
+            line = lastpos.line
+            if c == '\n'
+                line += 1
+                pos = 0
+            else
+                pos += 1
+            end
+            push!(source.positions, Position(line, pos))
         end
     end
-    if pos > length(line)
-        throw(HrseSyntaxException("Unterminated string", ctx.line, posorig+ctx.posoffset))
+    return source.leading[num]
+end
+
+function peekpos(source::LexerSource; num=1)
+    peek(source, num=num)
+    return source.positions[num]
+end
+
+function iswhitespace(char::Char)
+    return char == ' ' || char == '\t'
+end
+
+function isnumericbody(char::Char)
+    return isxdigit(char) || char == '_'
+end
+
+function runmachine(source::LexerSource)
+    machine = source -> lexindent(source, Char[], 1, 1)
+    while machine !== nothing
+        machine = machine(source)
     end
-    push!(tokens, StringToken(String(builder), ctx.line, posorig+ctx.posoffset))
-    return pos+1, ctx
 end
 
-function consumesymbol(matched, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
-    text = matched.match
-    posorig = pos
-    pos = pos+length(text)
-    push!(tokens, StringToken(text, ctx.line, posorig+ctx.posoffset))
-    return pos, ctx
-end
-
-function consumeliteral(matched, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,TokenizerContext}
-    text = matched.match
-    posorig = pos
-    pos = pos+length(text)
-    if text == "t"
-        push!(tokens, SimpleToken(TRUE, ctx.line, posorig+ctx.posoffset))
-    elseif text == "f"
-        push!(tokens, SimpleToken(FALSE, ctx.line, posorig+ctx.posoffset))
-    elseif text == "inf"
-        push!(tokens, NumberToken(ctx.options.floattype(Inf), ctx.line, pos+ctx.posoffset))
-    elseif text == "nan"
-        push!(tokens, NumberToken(ctx.options.floattype(NaN), ctx.line, pos+ctx.posoffset))
+function lex(source::LexerSource)
+    char = consume(source)
+    line = source.line
+    pos = source.pos
+    if char === nothing
+        emit(source, SimpleToken(EOF, source.line, source.pos))
+        return
+    elseif char == '"'
+        return s -> lexstring(s, Char[], line, pos)
+    elseif char == '('
+        return s -> lexparen(s)
+    elseif char == ')'
+        emit(source, SimpleToken(RPAREN, source.line, source.pos))
+    elseif char == '='
+        emit(source, SimpleToken(EQUALS, source.line, source.pos))
+    elseif char == '.'
+        return s -> lexdot(s)
+    elseif char == ':'
+        emit(source, SimpleToken(COLON, source.line, source.pos))
+    elseif char == ';'
+        return s -> lexcomment(s, Char[], line, pos)
+    elseif iswhitespace(char)
+        # just continue
+    elseif issymbolstart(char)
+        return s -> lexsymbol(s, [char])
+    elseif isnumericbody(char) || char in ['.', '+', '-']
+        return s -> lexnumber(s, [char], line, pos)
+    elseif char == '\n'
+        return s -> lexindent(s, Char[], line, pos+1)
     else
-        throw(HrseSyntaxException("Invalid hash literal '$(text)'", ctx.line, posorig+ctx.posoffset))
+        throw(HrseSyntaxException("Unexpected character '$char'", source.line, source.pos))
     end
-    return pos, ctx
+    return s -> lex(s)
+end
+
+function lexindent(source, chars, line, pos)
+    next = peek(source)
+    if next == ' ' || next == '\t'
+        push!(chars, consume(source))
+        return s -> lexindent(s, chars, line, pos)
+    else
+        emit(source, IndentToken(String(chars), line, pos))
+        return s -> lex(s)
+    end
+end
+
+function lexparen(source::LexerSource)
+    next = peek(source)
+    line = source.line
+    pos = source.pos
+    if next == ';'
+        return s -> lexlistcomment(s, 0, line, pos)
+    end
+    emit(source, SimpleToken(LPAREN, source.line, source.pos))
+    return s -> lex(s)
+end
+
+function lexcomment(source::LexerSource, chars, line, pos)
+    char = peek(source)
+    if char === nothing || char == '\n'
+        comment = strip(String(chars))
+        emit(source, CommentToken(comment, line, pos))
+        return s -> lex(s)
+    else
+        push!(chars, consume(source))
+        return s -> lexcomment(s, chars, line, pos)
+    end
+end
+
+function lexlistcommentopen(source::LexerSource, count, line, pos)
+    char = peek(source)
+    if char === nothing
+        throw(HrseSyntaxException("Unterminated multiline comment", line, pos))
+    elseif char == ';'
+        consume(source)
+        return s -> lexlistcommentopen(s, count+1, line, pos)
+    else
+        return s -> lexlistcommentbody(s, Char[], count, 0, line, pos)
+    end
+end
+
+function lexlistcommentbody(source::LexerSource, chars, count, counting, line, pos)
+    char = consume(source)
+    if char === nothing
+        throw(HrseSyntaxException("Unterminated multiline comment", line, pos))
+    elseif char == ')'
+        if counting == count
+            comment = strip(String(chars))
+            emit(source, CommentToken(comment, line, pos))
+            return s -> lex(s)
+        else
+            if counting != 0
+                for _ in 1:counting
+                    push!(chars, ';')
+                end
+            end
+            push!(chars, char)
+            return s -> lexlistcommentbody(s, chars, count, 0, line, pos)
+        end
+    elseif char == ';'
+        return s -> lexlistcommentbody(s, chars, count, counting+1, line, pos)
+    else
+        if counting != 0
+            for _ in 1:counting
+                push!(chars, ';')
+            end
+        end
+        push!(chars, char)
+        return s -> lexlistcommentbody(s, chars, count, 0, line, pos)
+    end
+end
+
+function lexnumber(source::LexerSource, chars, line::Integer, pos::Integer)
+    char = peek(source)
+    if isnumericbody(char) || char in ['.', 'e', 'E', '+', '-', 'x', 'X', 'b', 'B']
+        push!(chars, consume(source))
+        return s -> lexnumber(s, chars, line, pos)
+    else
+        text = String(chars)
+        if !isnothing(match(Literals.FLOAT_REGEX, text))
+            emit(source, NumberToken(Literals.parsefloat(text; type=source.options.floattype), line, pos))
+        elseif !isnothing(match(Literals.INT_REGEX, text))
+            parsed = Literals.parseint(text; types=source.options.integertypes)
+            if parsed === nothing
+                throw(HrseSyntaxException("Invalid number '$text'", line, pos))
+            end
+            emit(source, NumberToken(parsed, line, pos))
+        else
+            throw(HrseSyntaxException("Invalid number '$text'", line, pos))
+        end
+        return s -> lex(s)
+    end
+end
+
+function lexdot(source::LexerSource)
+    i = 1
+    digits = false
+    while (char = peek(source, num=i)) !== nothing && isdigit(char) && isnumericbody(char)
+        i += 1
+        if isdigit(char)
+            digits = true
+        end
+    end
+    if digits
+        line = source.line
+        pos = source.pos
+        return s -> lexnumber(s, Char['.'], line, pos)
+    else
+        emit(source, SimpleToken(DOT, source.line, source.pos))
+    end
+    return s -> lex(s)
+end
+
+function lexsymbol(source::LexerSource, chars)
+    char = peek(source)
+    if char === nothing || !issymbolbody(char)
+        emit(source, StringToken(String(chars), source.line, source.pos))
+        return s -> lex(s)
+    else
+        push!(chars, consume(source))
+        return s -> lexsymbol(s, chars)
+    end
+end
+
+function lexstring(source::LexerSource, chars, startline::Integer, startpos::Integer)
+    char = consume(source)
+    if char === nothing
+        throw(HrseSyntaxException("Unterminated string", startline, startpos))
+    elseif char == '\\'
+        return s -> lexescape(s, chars, startline, startpos)
+    elseif char == '"'
+        next = peek(source)
+        if issymbolbody(next)
+            pos = peekpos(source)
+            throw(HrseSyntaxException("Unexpected symbol character directly after string", pos.line, pos.pos))
+        end
+        emit(source, StringToken(String(chars), startline, startpos))
+        return s -> lex(s)
+    else
+        push!(chars, char)
+        return s -> lexstring(s, chars, startline, startpos)
+    end
+end
+
+function lexescape(source::LexerSource, chars, startline::Integer, startpos::Integer)
+    char = consume(source)
+    callback = (s, c) -> lexstring(s, push!(chars, c), startline, startpos)
+    if char === nothing
+        throw(HrseSyntaxException("Unterminated string", startline, startpos))
+    elseif char == 'n'
+        push!(chars, '\n')
+    elseif char == 't'
+        push!(chars, '\t')
+    elseif char == 'r'
+        push!(chars, '\r')
+    elseif char == 'b'
+        push!(chars, '\b')
+    elseif char == 'f'
+        push!(chars, '\f')
+    elseif char == 'v'
+        push!(chars, '\v')
+    elseif char == 'a'
+        push!(chars, '\a')
+    elseif char == 'e'
+        push!(chars, '\e')
+    elseif char == '\\'
+        push!(chars, '\\')
+    elseif char == '"'
+        push!(chars, '"')
+    elseif char == 'u'
+        return s -> lexunicode(s, callback)
+    elseif '0' <= char < '8'
+        return s -> lexoctal(s, callback, [char])
+    else
+        throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", source.line, source.pos))
+    end
+    return s -> lexstring(s, chars, startline, startpos)
+end
+
+function lexunicode(source::LexerSource, callback)
+    char = consume(source)
+    if char == '{'
+        return s -> lexunicodepoint(s, Char[], callback)
+    else
+        throw(HrseSyntaxException("Invalid unicode character escape \"\\u$char\"", source.line, source.pos))
+    end
+end
+
+function lexoctal(source::LexerSource, callback, chars)
+    next = peek(source)
+    if length(chars) < 3 && '0' <= next < '8'
+        char = consume(source)
+        push!(chars, char)
+        return s -> lexoctal(s, callback, chars)
+    else
+        i = tryparse(UInt8, String(chars); base=8)
+        if i === nothing
+            throw(HrseSyntaxException("Invalid octal character \"\\$(String(chars))\"", source.line, source.pos))
+        end
+        return s -> callback(s, i)
+    end
+end
+
+function lexunicodepoint(source::LexerSource, chars, callback)
+    char = consume(source)
+    if char == '}'
+        i = tryparse(UInt32, String(chars); base=16)
+        if i === nothing || !Unicode.isassigned(i)
+            throw(HrseSyntaxException("Invalid unicode character \"\\u{$(String(chars))}\"", source.line, source.pos))
+        end
+        u = Char(i)
+        return s -> callback(s, i)
+    elseif isxdigit(char)
+        push!(chars, char)
+        return s -> lexunicodepoint(s, chars, callback)
+    else
+        throw(HrseSyntaxException("Invalid unicode character escape \"\\u{$(String(chars))}$char\"", source.line, source.pos))
+    end
 end
 
 mutable struct Tokens
@@ -319,6 +452,7 @@ mutable struct Tokens
 end
 
 peek(tokens::Tokens) = tokens.tokens[1]
+peek(tokens::Tokens, i::Integer) = length(tokens.tokens) >= i ? tokens.tokens[i] : nothing
 push!(tokens::Tokens, token::Token) = pushfirst!(tokens.tokens, token)
 function consume(tokens::Tokens)
     token = popfirst!(tokens.tokens)
@@ -362,13 +496,18 @@ function parsefile(tokens, options::Hrse.ReadOptions)
     comments = []
     if tokentype(baseindent) == INDENT
         if isempty(tokens.rootlevel) || startswith(baseindent.indent, tokens.rootlevel[end].indent)
-            while tokentype(peek(tokens)) != EOF
+            while tokentype(peek(tokens)) != EOF && tokentype(peek(tokens)) != RPAREN
                 comments = parsecomments(tokens, options)
                 peeked = peek(tokens)
                 if tokentype(peeked) == INDENT
                     if peeked.indent == baseindent.indent
                     elseif peeked.indent != tokens.rootlevel[end].indent
-                        throw(HrseSyntaxException("Unexpected indent level", peek.line, peek.pos))
+                        following = tokentype(peek(tokens, 2))
+                        if following == EOF || following == RPAREN
+                            consume(tokens)
+                            break
+                        end
+                        throw(HrseSyntaxException("Unexpected indent level", peeked.line, peeked.pos))
                     else
                         break
                     end
@@ -405,7 +544,7 @@ function parsecomments(tokens, options::Hrse.ReadOptions)
     while tokentype(peek(tokens)) == COMMENT
         push!(comments, consume(tokens))
         newindent = stripindent(tokens)
-        if isnothing(newindent)
+        if !isnothing(newindent)
             indent = newindent
         end
     end
@@ -425,7 +564,11 @@ function parseexpression(tokens, options::Hrse.ReadOptions)
         consume(tokens)
         if tokentype(peek(tokens)) == INDENT
             push!(tokens.rootlevel, tokens.indentlevel)
+            comments = parsecomments(tokens, options)
             indent = peek(tokens)
+            for comment in reverse(comments)
+                push!(tokens, comment)
+            end
             if startswith(tokens.rootlevel[end].indent, indent.indent)
                 pop!(tokens.rootlevel)
                 return DotExpression(expression, ListExpression([]))
@@ -512,7 +655,7 @@ function parseimodelineexpression(tokens, options::Hrse.ReadOptions)
     dotexpr = false
     dotpos = 0
     dotline = 0
-    while tokentype(peek(tokens)) != INDENT && tokentype(peek(tokens)) != EOF
+    while tokentype(peek(tokens)) != INDENT && tokentype(peek(tokens)) != EOF && tokentype(peek(tokens)) != RPAREN
         if tokentype(peek(tokens)) == DOT
             dotexpr = true
             dotpos = tokenpos(peek(tokens))

@@ -73,7 +73,7 @@ function deserialize(::Mutable, obj::Vector, ::Type{T}, options::ReadOptions)::T
     out = T()
     for (k, v) in dict
         fn = deserialize(StructType(Symbol), k, Symbol, options)
-        applied = StructType.applyfield!(out, fn) do i, name, ft
+        applied = StructTypes.applyfield!(out, fn) do i, name, ft
             deserialize(StructType(ft), v, ft, options)
         end
         if !applied
@@ -165,6 +165,7 @@ function serialize(::Mutable, obj, options::PrinterOptions)
     StructTypes.foreachfield(obj) do i, name, ft, v
         push!(out, serialize(StructType(Symbol), name, options) => serialize(StructType(ft), v, options))
     end
+    return out
 end
 
 function serialize(::OrderedStruct, obj, options::PrinterOptions)

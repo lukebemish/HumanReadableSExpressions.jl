@@ -16,23 +16,36 @@ whitespace can't be in symbols in general
 ', ` reserved for extensions
 =# 
 
-const RESERVED_CHAR = "():=.\"'`\\p{Cc}\\p{Zs}#;"
-const SYMBOL_CHAR = "[^$RESERVED_CHAR]"
-const SYMBOL_START_CHAR = "[^$RESERVED_CHAR\\-+\\d]"
+function issymbolstartbanned(char::Char)
+    return isspace(char) ||
+        !isprint(char) ||
+        char in ['(', ')', '+', '-', '"', '\'', '`', ':', ';', '#', '.'] ||
+        (!isascii(char) && ispunct(char)) ||
+        isnumeric(char)
+end
 
-const SYMBOL_REGEX = Regex("^$SYMBOL_START_CHAR$SYMBOL_CHAR*")
-const FULL_SYMBOL_REGEX = Regex("^$SYMBOL_START_CHAR$SYMBOL_CHAR*\$")
+function issymbolstart(char::Char)
+    return !issymbolstartbanned(char)
+end
+
+function issymbolbody(char::Char)
+    return char in ['+', '-'] || (!isascii(char) && ispunct(char)) || isnumeric(char) || issymbolstart(char)
+end
+
+function issymbol(str)
+    return !isempty(str) && issymbolstart(str[1]) && all(issymbolbody, str[2:end])
+end
 
 const DEC_DIGIT = "0-9"
 const HEX_DIGIT = "0-9a-fA-F"
 const BIN_DIGIT = "0-1"
 
-const INT_REGEX = Regex("^([+-]?)((0[xX][$(HEX_DIGIT)_]*[$(HEX_DIGIT)][$(HEX_DIGIT)_]*)|(0[bB][$(BIN_DIGIT)_]*[$(BIN_DIGIT)][$(BIN_DIGIT)_]*)|([$(DEC_DIGIT)_]*[$(DEC_DIGIT)][$(DEC_DIGIT)_]*))(?=[$(replace(RESERVED_CHAR,'.'=>""))]|\$)")
+const INT_REGEX = Regex("^([+-]?)((0[xX][$(HEX_DIGIT)_]*[$(HEX_DIGIT)][$(HEX_DIGIT)_]*)|(0[bB][$(BIN_DIGIT)_]*[$(BIN_DIGIT)][$(BIN_DIGIT)_]*)|([$(DEC_DIGIT)_]*[$(DEC_DIGIT)][$(DEC_DIGIT)_]*))\$")
 
 const DEC_LITERAL = "([$(DEC_DIGIT)_]*[$(DEC_DIGIT)][$(DEC_DIGIT)_]*)"
 const FLOAT_EXPONENT = "[eE][+-]?$DEC_LITERAL"
 const FLOAT_MAIN = "($DEC_LITERAL\\.$DEC_LITERAL?|\\.$DEC_LITERAL)"
-const FLOAT_REGEX = Regex("^[+-]?($FLOAT_MAIN($FLOAT_EXPONENT)?|($DEC_LITERAL$FLOAT_EXPONENT))(?=[$(replace(RESERVED_CHAR,'.'=>""))]|\$)")
+const FLOAT_REGEX = Regex("^[+-]?($FLOAT_MAIN($FLOAT_EXPONENT)?|($DEC_LITERAL$FLOAT_EXPONENT))\$")
 
 function parseint(s::String; types=[Int64, BigInt])
     types = Vector{Type{<:Signed}}(types)
