@@ -10,7 +10,8 @@ Hrse.jl is a Julia package for reading and writing files written in [HRSE](https
 S-Expressions, which are a human-readable format for representing data and configuration files that is equivalent and
 and interchangeable with s-expressions.
 
-Hrse.jl provides two main functions, `readhrse` and `writehrse`, which read and write HRSE files, respectively.
+Hrse.jl provides two main functions, `readhrse` and `writehrse`, which read and write HRSE files, respectively. Both
+functions support custom serialization and deserialization of types using StructTypes.jl.
 
 ## API
 
