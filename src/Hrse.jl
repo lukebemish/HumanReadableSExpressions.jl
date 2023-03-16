@@ -1,5 +1,7 @@
 module Hrse
 
+import StructTypes
+
 """
 An extension to HRSE's syntax that affects parsing and/or printing.
 
@@ -105,17 +107,20 @@ struct PrinterOptions
     extensions
     pairmode::PairMode
     inlineprimitives::Integer
+    trailingnewline::Bool
     PrinterOptions(;
     indent::String="  ",
     comments::Bool=true,
     extensions=[],
+    trailingnewline::Bool=true,
     pairmode::PairMode=COLON_MODE,
     inlineprimitives::Integer=20) = new(
         indent,
         comments,
         extensions,
         pairmode,
-        inlineprimitives)
+        inlineprimitives,
+        trailingnewline)
 end
 
 """
@@ -130,6 +135,7 @@ end
 
 include("literals.jl")
 include("parser.jl")
+include("structures.jl")
 include("printer.jl")
 
 
@@ -166,7 +172,7 @@ julia> Hrse.readhrse(hrse)
 
 See also [`ReadOptions`](@ref).
 """
-function readhrse(hrse::IO; options::ReadOptions=ReadOptions())
+function readhrse(hrse::IO; options::ReadOptions=ReadOptions(), type::Union{Type, Nothing}=nothing)
     dense = DENSE in options.extensions
     tokens = Parser.Tokens(Parser.tokenize(hrse, options), nothing, [])
     parsetree = Parser.parsefile(tokens, options)
@@ -180,10 +186,14 @@ function readhrse(hrse::IO; options::ReadOptions=ReadOptions())
     if (dense && length(translated) != 1)
         throw(Parser.HrseSyntaxException("Expected a single root-level element in dense mode", Parser.tokenline(Parser.peek(tokens)), Parser.tokenpos(Parser.peek(tokens))))
     end
-    return dense ? translated[1] : translated
+    obj = dense ? translated[1] : translated
+    if type !== nothing
+        return Structures.deserialize(StructTypes.StructType(type), obj, type, options)
+    end
+    return obj
 end
 
-readhrse(hrse::String; options::ReadOptions=ReadOptions()) = readhrse(IOBuffer(hrse), options=options)
+readhrse(hrse::String; options::ReadOptions=ReadOptions(), type::Union{Type, Nothing}=nothing) = readhrse(IOBuffer(hrse), options=options, type=type)
 
 """
     writehrse(io::IO, obj, options::PrinterOptions)
@@ -230,6 +240,9 @@ function writehrse(io::IO, obj, options::PrinterOptions)
         Printer.condensed(io, toprint, options)
     else
         Printer.pretty(io, toprint, options, 0, true; root=true)
+        if options.trailingnewline
+            println(io)
+        end
     end
 end
 

@@ -3,6 +3,8 @@ module Printer
 import ..Hrse
 import ..Hrse: PrinterOptions
 import ..Literals
+import ..Structures
+import StructTypes: StructType
 import Base.Unicode
 
 isprimitive(obj) = false
@@ -96,6 +98,11 @@ pretty(io::IO, obj::Integer, options::PrinterOptions, indent::Integer, imode::Bo
 pretty(io::IO, obj::AbstractFloat, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
 pretty(io::IO, obj::Bool, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...) = primitiveprint(io, obj, options)
 
+function pretty(io::IO, obj::T, options::PrinterOptions, indent::Integer, imode::Bool; kwargs...) where T
+    translated = Structures.serialize(StructType(T), obj, options)
+    pretty(io, translated, options, indent, imode; kwargs...)
+end
+
 function pretty(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions, indent::Integer, imode::Bool; allownewlinecomments=true, kwargs...)
     lines = split(join(obj.comments, '\n'), '\n')
     if allownewlinecomments && length(lines) == 1 && !isprimitive(obj.element)
@@ -137,21 +144,24 @@ function denseiter(io::IO, obj, options::PrinterOptions)
     print(io, '(')
     first = true
     for i in obj
-        if !first && needsspace(i, false)
+        t = translate(i, options)
+        if !first && needsspace(t, false)
             print(io, ' ')
         else
             first = false
         end
-        condensed(io, i, options)
+        condensed(io, t, options)
     end
     print(io, ')')
 end
 
 function condensed(io::IO, obj::Pair, options::PrinterOptions)
     print(io, '(')
-    condensed(io, obj.first, options)
-    print(io, needsspaceafter(obj.first) ? ' ' : "", ".", needsspace(obj.second, true) ? ' ' : "")
-    condensed(io, obj.second, options)
+    tfirst = translate(obj.first, options)
+    tsecond = translate(obj.second, options)
+    condensed(io, tfirst, options)
+    print(io, tfirst ? ' ' : "", ".", needsspace(tsecond, true) ? ' ' : "")
+    condensed(io, tsecond, options)
     print(io, ')')
 end
 
@@ -167,6 +177,17 @@ condensed(io::IO, obj::AbstractFloat, options::PrinterOptions) = primitiveprint(
 needsspace(obj::AbstractFloat, dot::Bool) = true
 condensed(io::IO, obj::Bool, options::PrinterOptions) = primitiveprint(io, obj, options)
 needsspace(obj::Bool, dot::Bool) = !dot
+
+translate(obj::AbstractDict, options::PrinterOptions) = obj
+translate(obj::Pair, options::PrinterOptions) = obj
+translate(obj::AbstractVector, options::PrinterOptions) = obj
+translate(obj::Symbol, options::PrinterOptions) = obj
+translate(obj::AbstractString, options::PrinterOptions) = obj
+translate(obj::Integer, options::PrinterOptions) = obj
+translate(obj::AbstractFloat, options::PrinterOptions) = obj
+translate(obj::Bool, options::PrinterOptions) = obj
+translate(obj::Hrse.CommentedElement, options::PrinterOptions) = obj
+translate(obj::T, options::PrinterOptions) where T = Structures.serialize(StructType(T), obj, options)
 
 function primitiveprint(io::IO, obj::Symbol, options::PrinterOptions)
     primitiveprint(io, string(obj), options)
@@ -221,7 +242,7 @@ function condensed(io::IO, obj::Hrse.CommentedElement, options::PrinterOptions)
             print(io, '(', ';'^count, startswith(comment,';') ? ' ' : "", comment, endswith(comment,';') ? ' ' : "", ';'^count, ')')
         end
     end
-    condensed(io, obj.element, options)
+    condensed(io, translate(obj.element, options), options)
 end
 
 needsspace(obj::Hrse.CommentedElement, dot::Bool) = false
@@ -230,10 +251,8 @@ needsspaceafter(obj::Hrse.CommentedElement) = needsspace(obj.element, true)
 
 const escapesingle(c) = if c <= Char(0o777)
     "\\" * string(UInt32(c), base=8, pad=3)
-elseif c <= Char(0xFFFF)
-    "\\u" * string(UInt32(c), base=16, pad=4)
 else
-    "\\U" * string(UInt32(c), base=16, pad=8)
+    "\\u{$(string(UInt32(c), base=16))}"
 end
 
 const ESCAPES = Dict(

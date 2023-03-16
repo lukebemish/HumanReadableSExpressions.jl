@@ -261,25 +261,11 @@ function consumestring(line, tokens, pos, ctx::TokenizerContext)::Tuple{Integer,
                 push!(builder, '"')
                 pos += 1
             elseif char == 'u'
-                matched = match(r"^[0-9a-fA-F]{1,4}", line[pos+1:end])
+                matched = match(r"^\{[0-9a-fA-F]+\}", line[pos+1:end])
                 if isnothing(matched)
                     throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", ctx.line, pos+ctx.posoffset))
                 end
-                push!(builder, Char(parse(UInt32, matched.match; base=16)))
-                pos += length(matched.match)
-            elseif char == 'U'
-                matched = match(r"^[0-9a-fA-F]{1,8}", line[pos+1:end])
-                if isnothing(matched)
-                    throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", ctx.line, pos+ctx.posoffset))
-                end
-                push!(builder, Char(parse(UInt32, matched.match; base=16)))
-                pos += length(matched.match)
-            elseif char == 'x'
-                matched = match(r"^[0-9a-fA-F]{1,2}", line[pos+1:end])
-                if isnothing(matched)
-                    throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", ctx.line, pos+ctx.posoffset))
-                end
-                push!(builder, Char(parse(UInt8, matched.match; base=16)))
+                push!(builder, Char(parse(UInt32, matched.match[2:end-1]; base=16)))
                 pos += length(matched.match)
             elseif '0' <= char < '8'
                 matched = match(r"^[0-7]{1,3}", line[pos:end])
