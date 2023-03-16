@@ -242,7 +242,8 @@ See also [`PrinterOptions`](@ref).
 function writehrse(io::IO, obj, options::PrinterOptions)
     toprint = (DENSE in options.extensions) ? [obj] : obj
     if options.pairmode == CONDENSED_MODE
-        Printer.condensed(io, toprint, options)
+        o = Printer.translate(toprint, options)
+        for i in o Printer.condensed(io, i, options) end
     else
         Printer.pretty(io, toprint, options, 0, true; root=true)
         if options.trailingnewline

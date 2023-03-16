@@ -28,32 +28,36 @@ end
 
 function deserialize(::DictType, obj::Pair, ::Type{T}, options::ReadOptions)::Pair where T <: Pair
     return Pair(
-        pairfirst(T, obj),
-        pairsecond(T, obj)
+        pairfirst(T, obj, options),
+        pairsecond(T, obj, options)
     )
 end
 
-function pairfirst(::Type{<:Pair}, obj::Pair)
+function pairfirst(::Type{<:Pair}, obj::Pair, options::ReadOptions)
     return obj.first
 end
 
-function pairfirst(::Type{<:Pair{A}}, obj::Pair) where A
+function pairfirst(::Type{<:Pair{A}}, obj::Pair, options::ReadOptions) where A
     return deserialize(StructType(A), obj.first, A, options)
 end
 
-function pairfirst(::Type{<:Pair{A,B}}, obj::Pair) where {A,B}
+function pairfirst(::Type{<:Pair{A,B}}, obj::Pair, options::ReadOptions) where {A,B}
     return deserialize(StructType(A), obj.first, A, options)
 end
 
-function pairsecond(::Type{<:Pair}, obj::Pair)
+function pairsecond(::Type{<:Pair}, obj::Pair, options::ReadOptions)
     return obj.second
 end
 
-function pairsecond(::Type{<:Pair{A,B}}, obj::Pair) where {A,B}
+function pairsecond(::Type{<:Pair{A,B}}, obj::Pair, options::ReadOptions) where {A,B}
     return deserialize(StructType(B), obj.second, B, options)
 end
 
 function deserialize(::ArrayType, obj::Vector, ::Type{T}, options::ReadOptions)::T where T
+    if Base.IteratorEltype(T) == Base.HasEltype()
+        eltype = Base.eltype(T)
+        return construct(T, map(x -> deserialize(StructType(eltype), x, eltype, options), obj))
+    end
     return construct(T, obj)
 end
 
@@ -84,12 +88,16 @@ function deserialize(::Mutable, obj::Vector, ::Type{T}, options::ReadOptions)::T
 end
 
 function deserialize(::OrderedStruct, obj::Vector, ::Type{T}, options::ReadOptions)::T where T
+    dict = try
+        Dict(obj)
+    catch
+        throw(ArgumentError("Vector contains non-dict entries!"))
+    end
     out = []
     StructTypes.foreachfield(T) do i, name, ft
-        if i > length(obj)
-            throw(ArgumentError("Too few elements in vector for type $T"))
+        if haskey(dict, String(name))
+            push!(out, deserialize(StructType(ft), dict[String(name)], ft, options))
         end
-        push!(out, deserialize(StructType(ft), obj[i], ft, options))
     end
     return construct(T, out...)
 end

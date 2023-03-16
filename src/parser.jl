@@ -212,6 +212,8 @@ function lex(source::LexerSource)
         return s -> lexsymbol(s, [char])
     elseif isnumericbody(char) || char in ['.', '+', '-']
         return s -> lexnumber(s, [char], line, pos)
+    elseif char == '#'
+        return s -> lexliteral(s, Char['#'], line, pos)
     elseif char == '\n'
         return s -> lexindent(s, Char[], line, pos+1)
     else
@@ -302,10 +304,16 @@ function lexnumber(source::LexerSource, chars, line::Integer, pos::Integer)
     if isnumericbody(char) || char in ['.', 'e', 'E', '+', '-', 'x', 'X', 'b', 'B']
         push!(chars, consume(source))
         return s -> lexnumber(s, chars, line, pos)
+    elseif char == '#' && length(chars) == 1
+        return s -> lexliteral(s, Char[chars[1], consume(source)], line, pos)
     else
         text = String(chars)
         if !isnothing(match(Literals.FLOAT_REGEX, text))
-            emit(source, NumberToken(Literals.parsefloat(text; type=source.options.floattype), line, pos))
+            parsed = Literals.parsefloat(replace(text, '_'=>""); type=source.options.floattype)
+            if parsed === nothing
+                throw(HrseSyntaxException("Invalid number '$text'", line, pos))
+            end
+            emit(source, NumberToken(parsed, line, pos))
         elseif !isnothing(match(Literals.INT_REGEX, text))
             parsed = Literals.parseint(text; types=source.options.integertypes)
             if parsed === nothing
@@ -316,6 +324,30 @@ function lexnumber(source::LexerSource, chars, line::Integer, pos::Integer)
             throw(HrseSyntaxException("Invalid number '$text'", line, pos))
         end
         return s -> lex(s)
+    end
+end
+
+function lexliteral(source::LexerSource, chars, line::Integer, pos::Integer)
+    char = peek(source)
+    if char === nothing || !issymbolbody(char)
+        text = String(chars)
+        if text == "#t"
+            emit(source, SimpleToken(TRUE, line, pos))
+        elseif text == "#f"
+            emit(source, SimpleToken(FALSE, line, pos))
+        elseif text == "#inf" || text == "+#inf"
+            emit(source, NumberToken(source.options.floattype(Inf), line, pos))
+        elseif text == "-#inf"
+            emit(source, NumberToken(source.options.floattype(-Inf), line, pos))
+        elseif text == "#nan"
+            emit(source, NumberToken(source.options.floattype(NaN), line, pos))
+        else
+            throw(HrseSyntaxException("Invalid literal '$text'", line, pos))
+        end
+        return s -> lex(s)
+    else
+        push!(chars, consume(source))
+        return s -> lexliteral(s, chars, line, pos)
     end
 end
 

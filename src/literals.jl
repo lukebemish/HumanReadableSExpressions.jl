@@ -60,7 +60,7 @@ function parseint(s::String; types=[Int64, BigInt])
 end
 
 function parsefloat(s::String; type::Type{<:AbstractFloat}=Float64)
-    return parse(type, s)
+    return tryparse(type, s)
 end
 
 function parseunsigned(s::String, types::Vector{Type{<:Signed}})
@@ -81,15 +81,12 @@ function parseint(s::String, base::UInt16, ::Type{BigInt}, ::Vector{Type{<:Signe
     c, i = iterate(s,1)::Tuple{Char, Int}
     
     while !isspace(c)
-
-        nold = n
-
         d = convert(BigInt, parsecharint(c))
         n *= base
         n += d
         
         c, i = iterate(s,i)::Tuple{Char, Int}
-        i >= endpos && break
+        i > endpos && break
     end
     return n
 end
@@ -137,7 +134,7 @@ function parseint(s::String, base::UInt16, ::Type{T}, overflowtypes::Vector{Type
         end
 
         c, i = iterate(s,i)::Tuple{Char, Int}
-        i >= endpos && break
+        i > endpos && break
     end
     return n
 end
