@@ -291,3 +291,24 @@ a:\40
 @test Hrse.ashrse(longlist, Hrse.PrinterOptions(inlineprimitives=40)) == """
 a: (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
 """
+
+@test Hrse.readhrse("""
+a: \"\"\"
+abc
+\"\"\"
+""") == ["a" => "abc\n"]
+
+@test Hrse.readhrse("""
+  a: \"\"\"
+  abc\"\"\"
+""") == ["a" => "abc"]
+
+@test Hrse.readhrse("""
+  a: \"\"\"  abc
+  def\"\"\"
+""") == ["a" => "  abc\n  def"]
+
+@test Hrse.readhrse("""
+a: \"\"\"
+""-\"\"\"""") == ["a" => "\"\"-"]
+

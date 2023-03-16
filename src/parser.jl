@@ -20,6 +20,9 @@ struct StringToken <: Token
     value::String
     line::Integer
     pos::Integer
+    multiline::Bool
+    lastline::Bool
+    StringToken(value::String, line::Integer, pos::Integer, multiline::Bool; lastline::Bool=false) = new(value, line, pos, multiline, lastline)
 end
 
 struct NumberToken <: Token
@@ -144,7 +147,7 @@ end
 
 function peek(source::LexerSource; num=1)
     if length(source.leading) < num
-        for i in 1:num
+        for _ in length(source.leading):num
             if eof(source.io)
                 return nothing
             end
@@ -167,7 +170,7 @@ end
 
 function peekpos(source::LexerSource; num=1)
     peek(source, num=num)
-    return source.positions[num]
+    return length(source.leading) >= num ? source.positions[num] : source.positions[end]
 end
 
 function iswhitespace(char::Char)
@@ -193,7 +196,12 @@ function lex(source::LexerSource)
         emit(source, SimpleToken(EOF, source.line, source.pos))
         return
     elseif char == '"'
-        return s -> lexstring(s, Char[], line, pos)
+        multiline = peek(source) == '"' && peek(source, num=2) == '"'
+        if multiline
+            consume(source)
+            consume(source)
+        end
+        return s -> lexstring(s, Char[], line, pos, multiline)
     elseif char == '('
         return s -> lexparen(s)
     elseif char == ')'
@@ -373,7 +381,7 @@ end
 function lexsymbol(source::LexerSource, chars)
     char = peek(source)
     if char === nothing || !issymbolbody(char)
-        emit(source, StringToken(String(chars), source.line, source.pos))
+        emit(source, StringToken(String(chars), source.line, source.pos, false))
         return s -> lex(s)
     else
         push!(chars, consume(source))
@@ -381,29 +389,50 @@ function lexsymbol(source::LexerSource, chars)
     end
 end
 
-function lexstring(source::LexerSource, chars, startline::Integer, startpos::Integer)
+function lexstring(source::LexerSource, chars, startline::Integer, startpos::Integer, multiline::Bool)
     char = consume(source)
     if char === nothing
         throw(HrseSyntaxException("Unterminated string", startline, startpos))
     elseif char == '\\'
-        return s -> lexescape(s, chars, startline, startpos)
+        return s -> lexescape(s, chars, startline, startpos, multiline)
+    elseif char == '\n' && !multiline
+        throw(HrseSyntaxException("Unterminated string", startline, startpos))
+    elseif char == '\n' && multiline
+        emit(source, StringToken(String(chars), startline, startpos, multiline))
+        empty!(chars)
+    elseif iscntrl(char) && char != '\t' && char != '\r' && char != '\n'
+        throw(HrseSyntaxException("Invalid control character in string: U+$(string(UInt16('\t'), base=16, pad=4))", startline, startpos))
     elseif char == '"'
-        next = peek(source)
-        if issymbolbody(next)
-            pos = peekpos(source)
-            throw(HrseSyntaxException("Unexpected symbol character directly after string", pos.line, pos.pos))
+        if multiline && (peek(source) != '"' || peek(source, num=2) != '"')
+            # Just continue
+        else
+            if multiline
+                consume(source)
+                consume(source)
+            end
+            next = peek(source)
+            if next === nothing
+                # pass
+            elseif issymbolbody(next)
+                pos = peekpos(source)
+                throw(HrseSyntaxException("Unexpected symbol character directly after string", pos.line, pos.pos))
+            elseif next == '"'
+                pos = peekpos(source)
+                throw(HrseSyntaxException("Unexpected double quote directly after string", pos.line, pos.pos))
+            end
+            emit(source, StringToken(String(chars), startline, startpos, multiline; lastline = true))
+            return s -> lex(s)
         end
-        emit(source, StringToken(String(chars), startline, startpos))
-        return s -> lex(s)
-    else
-        push!(chars, char)
-        return s -> lexstring(s, chars, startline, startpos)
     end
+    if (char != '\r' && char != '\n')
+        push!(chars, char)
+    end
+    return s -> lexstring(s, chars, startline, startpos, multiline)
 end
 
-function lexescape(source::LexerSource, chars, startline::Integer, startpos::Integer)
+function lexescape(source::LexerSource, chars, startline::Integer, startpos::Integer, multiline::Bool)
     char = consume(source)
-    callback = (s, c) -> lexstring(s, push!(chars, c), startline, startpos)
+    callback = (s, c) -> lexstring(s, push!(chars, c), startline, startpos, multiline)
     if char === nothing
         throw(HrseSyntaxException("Unterminated string", startline, startpos))
     elseif char == 'n'
@@ -433,7 +462,7 @@ function lexescape(source::LexerSource, chars, startline::Integer, startpos::Int
     else
         throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", source.line, source.pos))
     end
-    return s -> lexstring(s, chars, startline, startpos)
+    return s -> lexstring(s, chars, startline, startpos, multiline)
 end
 
 function lexunicode(source::LexerSource, callback)
@@ -671,6 +700,27 @@ end
 
 function parsestringexpression(tokens, options::Hrse.ReadOptions)
     token = consume(tokens)
+    if token.multiline
+        lines = StringToken[token]
+        while tokentype(peek(tokens)) == STRING
+            nexttoken = consume(tokens)
+            push!(lines, nexttoken)
+            if nexttoken.lastline
+                break
+            end
+        end
+        dropfirstline = isempty(lines[1].value)
+        if dropfirstline
+            lines = lines[2:end]
+            indent = tokens.indentlevel.indent
+            linevalues = [i.value for i in lines]
+            if all(startswith.(linevalues, indent))
+                indentlen = length(indent)
+                return StringExpression(join([i[indentlen+1:end] for i in linevalues], '\n'))
+            end
+        end
+        return StringExpression(join([i.value for i in lines], '\n'))
+    end
     return StringExpression(token.value)
 end
 

@@ -199,7 +199,7 @@ function primitiveprint(io::IO, obj::AbstractString, options::PrinterOptions)
         for c in obj
             if haskey(ESCAPES, c)
                 print(io, '\\', ESCAPES[c])
-            elseif Base.Unicode.category_code(c) == Base.Unicode.UTF8PROC_CATEGORY_CC
+            elseif iscntrl(c) && c != '\t'
                 print(io, escapesingle(c))
             else
                 print(io, c)
