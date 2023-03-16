@@ -124,7 +124,7 @@ function emit(source::LexerSource, token::Token)
 end
 
 function consume(source::LexerSource)
-    if length(source.leading)==0 && eof(source.io)
+    if length(source.leading) == 0 && eof(source.io)
         return nothing
     end
     if length(source.leading) == 0
@@ -146,24 +146,22 @@ function consume(source::LexerSource)
 end
 
 function peek(source::LexerSource; num=1)
-    if length(source.leading) < num
-        for _ in length(source.leading):num
-            if eof(source.io)
-                return nothing
-            end
-            c = read(source.io, Char)
-            lastpos = length(source.leading) == 0 ? Position(source.line, source.pos) : source.positions[end]
-            push!(source.leading, c)
-            pos = lastpos.pos
-            line = lastpos.line
-            if c == '\n'
-                line += 1
-                pos = 0
-            else
-                pos += 1
-            end
-            push!(source.positions, Position(line, pos))
+    while length(source.leading) < num
+        if eof(source.io)
+            return nothing
         end
+        c = read(source.io, Char)
+        lastpos = length(source.leading) == 0 ? Position(source.line, source.pos) : source.positions[end]
+        push!(source.leading, c)
+        pos = lastpos.pos
+        line = lastpos.line
+        if c == '\n'
+            line += 1
+            pos = 0
+        else
+            pos += 1
+        end
+        push!(source.positions, Position(line, pos))
     end
     return source.leading[num]
 end
@@ -309,12 +307,16 @@ end
 
 function lexnumber(source::LexerSource, chars, line::Integer, pos::Integer)
     char = peek(source)
-    if isnumericbody(char) || char in ['.', 'e', 'E', '+', '-', 'x', 'X', 'b', 'B']
+    if char !== nothing && (isnumericbody(char) || char in ['.', 'e', 'E', '+', '-', 'x', 'X', 'b', 'B'])
         push!(chars, consume(source))
         return s -> lexnumber(s, chars, line, pos)
     elseif char == '#' && length(chars) == 1
         return s -> lexliteral(s, Char[chars[1], consume(source)], line, pos)
     else
+        next = peek(source)
+        if !isnothing(next) && issymbolbody(next)
+            throw(HrseSyntaxException("Invalid number '$(String(chars))$(next)'", line, pos))
+        end
         text = String(chars)
         if !isnothing(match(Literals.FLOAT_REGEX, text))
             parsed = Literals.parsefloat(replace(text, '_'=>""); type=source.options.floattype)

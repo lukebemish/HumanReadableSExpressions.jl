@@ -1,4 +1,5 @@
 using HumanReadableSExpressions
+import HumanReadableSExpressions: Parser.HrseSyntaxException
 import StructTypes
 using Test
 
@@ -180,6 +181,18 @@ test
 #f
 """
 
+# Other int encodings
+
+hrse = """
+0xAbC10
+0b11010
+-10
+-0x10
++20
+"""
+
+@test readhrse(hrse) == [282574486936592, 26, -10, -16, 20]
+
 # Encoding
 
 dict = Dict([
@@ -312,3 +325,17 @@ abc
 a: \"\"\"
 ""-\"\"\"""") == ["a" => "\"\"-"]
 
+# Test string literals
+@test readhrse("a-b") == ["a-b"]
+
+@test_throws HrseSyntaxException readhrse("-ax")
+@test_throws HrseSyntaxException readhrse(".a")
+@test_throws HrseSyntaxException readhrse("0stuff")
+@test readhrse("_1 not-a-number") == [["_1", "not-a-number"]]
+@test_throws HrseSyntaxException readhrse("#invalid-literal")
+
+@test_throws HrseSyntaxException readhrse("\"\a\"")
+@test_throws HrseSyntaxException readhrse("a\u00AD")
+@test_throws HrseSyntaxException readhrse("a\U2019")
+@test readhrse("a^") == ["a^"]
+@test readhrse("a1") == ["a1"]

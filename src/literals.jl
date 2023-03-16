@@ -16,9 +16,25 @@ whitespace can't be in symbols in general
 ', ` reserved for extensions
 =# 
 
+function category_code(c::AbstractChar)
+    !Base.Unicode.ismalformed(c) ? category_code(UInt32(c)) : Cint(31)
+end
+
+function category_code(x::Integer)
+    x ≤ 0x10ffff ? ccall(:utf8proc_category, Cint, (UInt32,), x) : Cint(30)
+end
+
+const CATEGORY_PC = 12
+const CATEGORY_PD = 13
+const CATEGORY_CF = 27
+
+function isfmt(char::Char)
+    category_code(char) == CATEGORY_CF
+end
+
 function issymbolstartbanned(char::Char)
     return isspace(char) ||
-        !isprint(char) ||
+        iscntrl(char) || isfmt(char) ||
         char in ['(', ')', '+', '-', '"', '\'', '`', ':', ';', '#', '.', '='] ||
         (!isascii(char) && ispunct(char)) ||
         isnumeric(char)
@@ -29,7 +45,7 @@ function issymbolstart(char::Char)
 end
 
 function issymbolbody(char::Char)
-    return char in ['+', '-'] || (!isascii(char) && ispunct(char)) || isnumeric(char) || issymbolstart(char)
+    return char in ['+', '-'] || category_code(char) == CATEGORY_PC || category_code(char) == CATEGORY_PD || isnumeric(char) || issymbolstart(char)
 end
 
 function issymbol(str)
