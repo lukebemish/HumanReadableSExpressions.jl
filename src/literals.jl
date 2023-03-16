@@ -19,7 +19,7 @@ whitespace can't be in symbols in general
 function issymbolstartbanned(char::Char)
     return isspace(char) ||
         !isprint(char) ||
-        char in ['(', ')', '+', '-', '"', '\'', '`', ':', ';', '#', '.'] ||
+        char in ['(', ')', '+', '-', '"', '\'', '`', ':', ';', '#', '.', '='] ||
         (!isascii(char) && ispunct(char)) ||
         isnumeric(char)
 end

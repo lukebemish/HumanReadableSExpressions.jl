@@ -236,7 +236,7 @@ function lexparen(source::LexerSource)
     line = source.line
     pos = source.pos
     if next == ';'
-        return s -> lexlistcomment(s, 0, line, pos)
+        return s -> lexlistcommentopen(s, 0, line, pos)
     end
     emit(source, SimpleToken(LPAREN, source.line, source.pos))
     return s -> lex(s)
