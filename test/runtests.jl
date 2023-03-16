@@ -334,6 +334,19 @@ abc
 a: \"\"\"
 ""-\"\"\"""") == ["a" => "\"\"-"]
 
+@test readhrse("""
+a: \"\"\"
+a \\
+   b \\
+  c\"\"\"
+""") == ["a" => "a b c"]
+
+@test readhrse("""
+a:
+\tb: \"\"\"
+\tabc\"\"\"
+""") == ["a" => ["b" => "abc"]]
+
 # Test string literals
 @test readhrse("a-b") == ["a-b"]
 

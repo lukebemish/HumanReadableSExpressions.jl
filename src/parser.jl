@@ -403,7 +403,7 @@ function lexstring(source::LexerSource, chars, startline::Integer, startpos::Int
         emit(source, StringToken(String(chars), startline, startpos, multiline))
         empty!(chars)
     elseif iscntrl(char) && char != '\t' && char != '\r' && char != '\n'
-        throw(HrseSyntaxException("Invalid control character in string: U+$(string(UInt16('\t'), base=16, pad=4))", startline, startpos))
+        throw(HrseSyntaxException("Invalid control character in string: U+$(string(UInt16(char), base=16, pad=4))", startline, startpos))
     elseif char == '"'
         if multiline && (peek(source) != '"' || peek(source, num=2) != '"')
             # Just continue
@@ -457,12 +457,27 @@ function lexescape(source::LexerSource, chars, startline::Integer, startpos::Int
         push!(chars, '\\')
     elseif char == '"'
         push!(chars, '"')
+    elseif multiline && char == '\n'
+        return s -> lexwhitespace(s, chars, startline, startpos, multiline)
     elseif char == 'u'
         return s -> lexunicode(s, callback)
     elseif '0' <= char < '8'
         return s -> lexoctal(s, callback, [char])
     else
         throw(HrseSyntaxException("Invalid escape sequence '\\$(char)'", source.line, source.pos))
+    end
+    return s -> lexstring(s, chars, startline, startpos, multiline)
+end
+
+function lexwhitespace(source::LexerSource, chars, startline::Integer, startpos::Integer, multiline::Bool)
+    char = peek(source)
+    if char === nothing
+        throw(HrseSyntaxException("Unterminated string", startline, startpos))
+    elseif iscntrl(char) && char != '\t' && char != '\r' && char != '\n'
+        throw(HrseSyntaxException("Invalid control character in string: U+$(string(UInt16(char), base=16, pad=4))", startline, startpos))
+    elseif char == '\n' || isspace(char)
+        consume(source)
+        return s -> lexwhitespace(s, chars, startline, startpos, multiline)
     end
     return s -> lexstring(s, chars, startline, startpos, multiline)
 end
