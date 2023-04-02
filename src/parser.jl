@@ -578,13 +578,13 @@ function parsefile(tokens, options::HumanReadableSExpressions.HrseReadOptions)
                 comments = parsecomments(tokens, options)
                 peeked = peek(tokens)
                 if tokentype(peeked) == INDENT
+                    following = tokentype(peek(tokens, 2))
+                    if following == EOF || following == RPAREN
+                        consume(tokens)
+                        break
+                    end
                     if peeked.indent == baseindent.indent
                     elseif peeked.indent != tokens.rootlevel[end].indent
-                        following = tokentype(peek(tokens, 2))
-                        if following == EOF || following == RPAREN
-                            consume(tokens)
-                            break
-                        end
                         throw(HrseSyntaxException("Unexpected indent level", peeked.line, peeked.pos))
                     else
                         break
